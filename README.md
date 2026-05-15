@@ -15,6 +15,7 @@ The repository starts with a lightweight Logics Manager style documentation base
 
 - `docs/product/` captures product intent, scope, user value, and success criteria.
 - `docs/adr/` records architecture decisions and their consequences.
+- `docs/request/` captures high-level product requests before they are split into delivery work.
 - `docs/backlog/` lists prioritized delivery slices.
 - `docs/tasks/` tracks executable tasks and validation evidence.
 
