@@ -8,7 +8,7 @@ Accepted.
 
 The project needs a practical street segment dataset for Paris intra-muros. The V1 goal is personal heritage tracking, not exhaustive GIS precision. The Android app should stay simple and should not perform heavy geospatial processing at runtime.
 
-The dataset must exclude the Bois de Boulogne and Bois de Vincennes and include public ways that are reasonably walkable or bikeable.
+The dataset must exclude the Bois de Boulogne and Bois de Vincennes. It should focus on ways that represent streets, paths, or cycleable/walkable public passages useful for the personal tracking goal. The exact OpenStreetMap filtering rules can stay pragmatic and may be refined later.
 
 ## Decision
 
@@ -17,6 +17,8 @@ The project will use OpenStreetMap as the street data source.
 Street segments will be generated outside the Android app by a dedicated preprocessing pipeline. The Android app will consume a local preprocessed file, probably GeoJSON, containing segments for Paris intra-muros.
 
 User progress will be stored separately inside the Android app, probably with Room. The source segment file must not contain a `completed` field or any other user-specific progress state.
+
+Segment ids will be defined before app integration and used as stable references by the Android app. Arrondissement attribution may be arbitrary for ambiguous or boundary-crossing segments. Geometry may be simplified: the goal is to represent Paris street segments clearly enough for personal tracking, not to preserve the exact shape of every street.
 
 Conceptual segment model:
 
@@ -34,6 +36,7 @@ Conceptual segment model:
 - User progress can survive segment source updates if stable ids are preserved.
 - The app can remain local-first with no backend or account system.
 - Dataset quality depends on the preprocessing pipeline and OpenStreetMap coverage.
+- Some arrondissement and geometry details may be approximate by design.
 
 ## Alternatives considered
 
@@ -44,7 +47,4 @@ Conceptual segment model:
 
 ## Open questions
 
-- What exact OSM tags define public walkable or bikeable ways for V1?
-- How should stable segment ids be generated and preserved across dataset refreshes?
-- How should arrondissement attribution be handled for segments crossing boundaries?
-- What simplification tolerance is acceptable for rendering performance without losing useful street shape?
+- Which simple OpenStreetMap filtering rules should be used first to keep normal streets, pedestrian ways, and cycleable paths while excluding clearly private, inaccessible, or irrelevant ways?

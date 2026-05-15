@@ -50,6 +50,9 @@ The primary user is the project owner. The app is personal, local-first, and dis
 - The source segment dataset must not contain user completion state.
 - Completion state is local user data stored in the Android app.
 - Data quality should be sufficient for personal heritage tracking, not perfect GIS accuracy.
+- Segment ids are defined before app integration and treated as stable app references.
+- Arrondissement assignment can be approximate or arbitrary when a segment is ambiguous.
+- Street geometry can be simplified as long as the rendered Paris segment network remains understandable.
 
 ## Technical principles
 

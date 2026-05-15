@@ -8,6 +8,8 @@ Priority: Must
 
 Notes: Keep source segment data separate from user completion state.
 
+Segment ids are defined before app integration and should be treated as stable references.
+
 ## Prepare OSM data pipeline
 
 Description: Design the future offline process that extracts, filters, splits, and exports Paris street segments from OpenStreetMap.
@@ -22,7 +24,7 @@ Description: Produce the first local segment dataset for Paris intra-muros.
 
 Priority: Must
 
-Notes: Exclude the Bois de Boulogne and Bois de Vincennes. Include public ways walkable or bikeable.
+Notes: Exclude the Bois de Boulogne and Bois de Vincennes. Keep normal streets, pedestrian ways, and cycleable paths. Arrondissement assignment and geometry simplification can stay pragmatic.
 
 ## Create Android project skeleton
 
