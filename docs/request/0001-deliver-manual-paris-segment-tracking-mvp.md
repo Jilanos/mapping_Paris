@@ -78,23 +78,16 @@ As the project owner, I want an Android app that displays Paris street segments 
 
 ## Backlog coverage
 
-This request is expected to be split into smaller backlog items and tasks. Initial coverage is tracked in `docs/backlog/0001-initial-backlog.md`.
+This request is split into smaller backlog items. Initial seed coverage remains in `docs/backlog/0001-initial-backlog.md`.
 
-Required MVP slices:
+Required MVP backlog:
 
-- Define segment data model
-- Prepare OSM data pipeline
-- Generate Paris intra-muros segment dataset
-- Create Android project skeleton
-- Load local segment dataset
-- Display interactive map
-- Render street segments
-- Select one segment
-- Toggle segment completion
-- Store completion state locally
-- Compute global statistics
-- Compute statistics by arrondissement
-- Prepare APK generation
+- `docs/backlog/0002-mvp-segment-data-contract.md`
+- `docs/backlog/0003-mvp-osm-segment-dataset.md`
+- `docs/backlog/0004-mvp-android-map-foundation.md`
+- `docs/backlog/0005-mvp-segment-loading-rendering-selection.md`
+- `docs/backlog/0006-mvp-local-completion-state.md`
+- `docs/backlog/0007-mvp-statistics-and-apk.md`
 
 Nice-to-have or post-MVP slices:
 
