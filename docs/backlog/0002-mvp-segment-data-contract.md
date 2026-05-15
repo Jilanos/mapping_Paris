@@ -74,6 +74,10 @@ Urgency: High
 
 This item should be completed before dataset generation and Android loading work.
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Risks
 
 - If ids are not stable enough, local completion state may become hard to preserve across dataset refreshes.

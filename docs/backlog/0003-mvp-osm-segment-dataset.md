@@ -77,6 +77,10 @@ Urgency: High
 
 This item can produce a simple first dataset. The filtering rules can be improved later after visual inspection.
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Risks
 
 - OSM tag filtering may initially include too many or too few ways.

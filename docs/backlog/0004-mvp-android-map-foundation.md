@@ -75,6 +75,10 @@ Urgency: High
 
 This is the first Android implementation slice. Keep dependencies limited to what is needed for the MVP foundation.
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Risks
 
 - osmdroid and Compose integration may require a pragmatic interop layer.

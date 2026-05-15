@@ -76,6 +76,10 @@ Urgency: Medium
 
 This item turns the manual tracking loop into a complete personal MVP deliverable.
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Risks
 
 - Statistics can be misleading if segment length data is missing or inconsistent.

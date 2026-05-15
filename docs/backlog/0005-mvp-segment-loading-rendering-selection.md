@@ -78,6 +78,10 @@ Urgency: High
 
 This item should avoid optimizing for every possible interaction pattern before the single-segment flow is reliable.
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Risks
 
 - Rendering too many segments may affect performance.

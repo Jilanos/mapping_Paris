@@ -76,6 +76,10 @@ Urgency: High
 
 This item completes the core manual tracking loop for one segment at a time.
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Risks
 
 - If future dataset ids change, completion state may need migration support.

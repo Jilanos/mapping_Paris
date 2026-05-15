@@ -100,6 +100,10 @@ Nice-to-have or post-MVP slices:
 - Product brief: `docs/product/product-brief.md`
 - Data source and segment model ADR: `docs/adr/0001-data-source-and-segment-model.md`
 
+## Task coverage
+
+- `docs/tasks/0002-deliver-manual-paris-segment-tracking-mvp.md`
+
 ## Open questions
 
 - Which simple OpenStreetMap filtering rules should be used first to keep normal streets, pedestrian ways, and cycleable paths while excluding clearly private, inaccessible, or irrelevant ways?
