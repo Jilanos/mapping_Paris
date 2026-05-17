@@ -19,7 +19,11 @@ class SegmentGeoJsonParser {
                         streetName = properties.getString("street_name"),
                         arrondissement = properties.getString("arrondissement"),
                         lengthMeters = properties.getDouble("length_meters"),
-                        accessibility = properties.optString("accessibility", null),
+                        accessibility = if (properties.has("accessibility")) {
+                            properties.getString("accessibility")
+                        } else {
+                            null
+                        },
                         geometry = buildList {
                             for (pointIndex in 0 until coordinates.length()) {
                                 val point = coordinates.getJSONArray(pointIndex)

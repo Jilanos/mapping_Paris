@@ -1,28 +1,35 @@
 # Android Build Notes
 
-## Requirement
+## Local toolchain
 
-The project needs a local Android toolchain before APK validation can run:
+The MVP build was validated with a local toolchain installed under:
 
-- JDK 17 or newer;
-- Android SDK;
-- Android platform matching `compileSdk`;
-- Gradle, Android Studio, or a generated Gradle wrapper.
+- JDK: `C:\Users\paulm\devtools\jdk-17`
+- Gradle: `C:\Users\paulm\devtools\gradle\gradle-8.10.2`
+- Android SDK: `C:\Users\paulm\devtools\android-sdk`
 
-The current machine did not expose `java`, `gradle`, `sdkmanager`, `ANDROID_HOME`, or `ANDROID_SDK_ROOT` during MVP execution.
+Installed Android SDK packages:
+
+- `platform-tools`
+- `platforms;android-35`
+- `build-tools;35.0.0`
+- `build-tools;34.0.0`
 
 ## Expected build command
 
-Once the Android toolchain is installed, run:
+From PowerShell:
 
 ```powershell
-gradle assembleDebug
+$env:JAVA_HOME = "$env:USERPROFILE\devtools\jdk-17"
+$env:ANDROID_HOME = "$env:USERPROFILE\devtools\android-sdk"
+$env:ANDROID_SDK_ROOT = "$env:USERPROFILE\devtools\android-sdk"
+.\gradlew.bat assembleDebug
 ```
 
-or, if a Gradle wrapper is added later:
+For lint:
 
 ```powershell
-.\gradlew.bat assembleDebug
+.\gradlew.bat lintDebug
 ```
 
 ## Expected APK
@@ -33,6 +40,9 @@ The debug APK should be produced at:
 app/build/outputs/apk/debug/app-debug.apk
 ```
 
-## Current limitation
+## Last validation
 
-The Android project files are present, but APK generation could not be validated in this environment until the Android toolchain is installed or exposed in the shell.
+- `assembleDebug`: passed.
+- `lintDebug`: passed.
+- APK produced: `app/build/outputs/apk/debug/app-debug.apk`.
+- ADB check: no device was connected at validation time.
