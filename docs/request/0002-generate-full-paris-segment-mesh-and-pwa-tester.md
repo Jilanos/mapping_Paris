@@ -120,18 +120,17 @@ The PWA is a validation tool for the segment generation process, not the final A
 
 ## Backlog guidance
 
-This request should be promoted into several backlog items rather than a single implementation block.
+This request is promoted into several backlog items rather than a single implementation block.
 
-Recommended slices:
+Backlog coverage:
 
-- define the corrected segment generation contract;
-- build the OSM extraction and filtering pipeline;
-- build geometry simplification and mesh segmentation;
-- export the definitive segment dataset;
-- build the Chrome PWA tester;
-- implement click and validation state in the PWA;
-- add dataset quality checks and visual inspection reports;
-- replace or deprecate the current seed dataset once the generated dataset is accepted.
+- `docs/backlog/0008-correct-full-segment-generation-contract.md`
+- `docs/backlog/0009-build-osm-extraction-filtering-pipeline.md`
+- `docs/backlog/0010-simplify-and-segment-paris-street-mesh.md`
+- `docs/backlog/0011-export-definitive-segment-dataset.md`
+- `docs/backlog/0012-build-chrome-pwa-segment-mesh-tester.md`
+- `docs/backlog/0013-add-pwa-segment-validation-state.md`
+- `docs/backlog/0014-add-segment-dataset-quality-checks.md`
 
 ## Decision references
 
