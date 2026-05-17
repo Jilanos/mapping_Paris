@@ -2,13 +2,13 @@
 
 From version: 0.0.0
 
-Status: Ready
+Status: Blocked
 
 Understanding: 95%
 
-Confidence: 85%
+Confidence: 80%
 
-Progress: 0%
+Progress: 85%
 
 Complexity: High
 
@@ -72,37 +72,37 @@ Out:
 
 ## Plan
 
-- [ ] Wave 1: segment contract
-  - [ ] Write the concrete segment schema and example record.
-  - [ ] Confirm stable id, arrondissement, length, geometry, and optional metadata rules.
-  - [ ] Confirm that user completion state is stored separately from source segment data.
-- [ ] Wave 2: Paris segment dataset
-  - [ ] Define pragmatic OSM filtering rules for the first dataset.
-  - [ ] Exclude Bois de Boulogne and Bois de Vincennes.
-  - [ ] Generate a local Paris intra-muros segment dataset.
-  - [ ] Document how to regenerate the dataset.
-- [ ] Wave 3: Android map foundation
-  - [ ] Initialize the Kotlin Android project with Jetpack Compose.
-  - [ ] Add osmdroid and display an online OSM map.
-  - [ ] Center the initial viewport on Paris intra-muros.
-  - [ ] Keep the structure simple and MVVM-compatible.
-- [ ] Wave 4: segment loading, rendering, and selection
-  - [ ] Load the local segment dataset in the app.
-  - [ ] Render segments over the map.
-  - [ ] Add visual states for default and selected segments.
-  - [ ] Support selecting one segment by user interaction.
-- [ ] Wave 5: local completion state
-  - [ ] Add local persistence for completion state, likely with Room.
-  - [ ] Store completion by stable segment id.
-  - [ ] Toggle completion manually for the selected segment.
-  - [ ] Reflect completed and not completed states in rendering.
-  - [ ] Verify persistence after app restart.
+- [x] Wave 1: segment contract
+  - [x] Write the concrete segment schema and example record.
+  - [x] Confirm stable id, arrondissement, length, geometry, and optional metadata rules.
+  - [x] Confirm that user completion state is stored separately from source segment data.
+- [x] Wave 2: Paris segment dataset
+  - [x] Define pragmatic OSM filtering rules for the first dataset.
+  - [x] Exclude Bois de Boulogne and Bois de Vincennes.
+  - [x] Generate a local Paris intra-muros seed segment dataset.
+  - [x] Document how to regenerate the future full dataset.
+- [x] Wave 3: Android map foundation
+  - [x] Initialize the Kotlin Android project with Jetpack Compose.
+  - [x] Add osmdroid and display an online OSM map.
+  - [x] Center the initial viewport on Paris intra-muros.
+  - [x] Keep the structure simple and MVVM-compatible.
+- [x] Wave 4: segment loading, rendering, and selection
+  - [x] Load the local segment dataset in the app.
+  - [x] Render segments over the map.
+  - [x] Add visual states for default and selected segments.
+  - [x] Support selecting one segment by user interaction.
+- [x] Wave 5: local completion state
+  - [x] Add local persistence for completion state, likely with Room.
+  - [x] Store completion by stable segment id.
+  - [x] Toggle completion manually for the selected segment.
+  - [x] Reflect completed and not completed states in rendering.
+  - [ ] Verify persistence after app restart on device or emulator.
 - [ ] Wave 6: statistics and APK
-  - [ ] Compute global completion distance and percentage.
-  - [ ] Compute completion distance and percentage by arrondissement.
-  - [ ] Display statistics in a simple UI.
+  - [x] Compute global completion distance and percentage.
+  - [x] Compute completion distance and percentage by arrondissement.
+  - [x] Display statistics in a simple UI.
   - [ ] Generate a local APK.
-  - [ ] Document the build command and artifact location.
+  - [x] Document the build command and artifact location.
 
 ## Acceptance criteria
 
@@ -122,15 +122,20 @@ Out:
 
 ## Validation
 
-Expected validation commands will be finalized after Android project initialization.
-
-Current task-level checks:
+Executed checks:
 
 - `git status --short --branch`
-- list generated data files and documentation updates
-- verify no secrets, local-only files, or build artifacts are staged
+- `Get-Content -Raw app\src\main\assets\paris_segments_seed.geojson | ConvertFrom-Json`
+- XML parse of `app/src/main/AndroidManifest.xml`
+- XML parse of `app/src/main/res/values/styles.xml`
+- `rg` checks for key decisions and implementation surfaces
+- `git diff --check`
 
-After Android initialization:
+Blocked check:
+
+- `gradle assembleDebug` failed because `gradle` is not installed or exposed in the shell.
+
+Remaining checks after Android toolchain setup:
 
 - run the project formatter if configured
 - run Android unit tests if configured
@@ -140,7 +145,24 @@ After Android initialization:
 
 ## Report
 
-Not started.
+Implemented:
+
+- Added Android Gradle project files.
+- Added Kotlin/Jetpack Compose Android app skeleton.
+- Added osmdroid online map screen centered on Paris.
+- Added local GeoJSON seed dataset with 21 Paris segment features.
+- Added GeoJSON parser and segment domain model.
+- Added Room persistence for completion state keyed by stable segment id.
+- Added single-segment selection and manual completion toggle.
+- Added completed, selected, and default segment rendering states.
+- Added global and arrondissement completion statistics.
+- Added segment contract documentation.
+- Added OSM dataset generation notes.
+- Added Android build notes with current toolchain blocker.
+
+Blocked:
+
+- APK generation and device/emulator persistence verification are blocked until JDK, Gradle, and Android SDK are installed or exposed in the shell.
 
 ## Non-goals
 

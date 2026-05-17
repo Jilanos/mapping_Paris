@@ -2,13 +2,13 @@
 
 From version: 0.0.0
 
-Status: Ready
+Status: Blocked
 
 Understanding: 95%
 
-Confidence: 85%
+Confidence: 80%
 
-Progress: 0%
+Progress: 85%
 
 Complexity: High
 

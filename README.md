@@ -23,4 +23,13 @@ This structure is intentionally small so future Codex tasks can be driven from c
 
 ## Current status
 
-The project is in framing phase. No Android code, Gradle project, or data pipeline has been created yet.
+The project has an MVP Android scaffold with:
+
+- a Kotlin/Jetpack Compose app structure;
+- an online OSM map integration through osmdroid;
+- a local GeoJSON seed dataset for Paris segments;
+- manual single-segment selection and completion state;
+- local Room persistence for progress;
+- global and arrondissement statistics.
+
+APK validation is pending because the local shell does not currently expose a JDK, Gradle, or Android SDK.

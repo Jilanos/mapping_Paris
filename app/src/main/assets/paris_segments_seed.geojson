@@ -1,0 +1,306 @@
+{
+  "type": "FeatureCollection",
+  "name": "mapping_paris_seed_segments",
+  "metadata": {
+    "scope": "Paris intra-muros seed dataset",
+    "source": "Manual seed derived from central Paris street geometry references for MVP integration",
+    "excluded": ["Bois de Boulogne", "Bois de Vincennes"],
+    "note": "This is a compact MVP seed dataset. It validates app loading, rendering, selection, completion, and statistics before a full OSM-generated dataset exists."
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-001-rivoli-001",
+        "street_name": "Rue de Rivoli",
+        "arrondissement": "1",
+        "length_meters": 620,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3297, 48.8609], [2.3364, 48.8616]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-001-honore-001",
+        "street_name": "Rue Saint-Honore",
+        "arrondissement": "1",
+        "length_meters": 510,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3312, 48.8662], [2.3367, 48.8646]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-002-montorgueil-001",
+        "street_name": "Rue Montorgueil",
+        "arrondissement": "2",
+        "length_meters": 390,
+        "accessibility": "public_walk"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3465, 48.8640], [2.3478, 48.8674]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-003-turenne-001",
+        "street_name": "Rue de Turenne",
+        "arrondissement": "3",
+        "length_meters": 760,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3614, 48.8556], [2.3651, 48.8621]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-004-rosiers-001",
+        "street_name": "Rue des Rosiers",
+        "arrondissement": "4",
+        "length_meters": 340,
+        "accessibility": "public_walk"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3580, 48.8573], [2.3616, 48.8579]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-005-mouffetard-001",
+        "street_name": "Rue Mouffetard",
+        "arrondissement": "5",
+        "length_meters": 610,
+        "accessibility": "public_walk"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3495, 48.8412], [2.3490, 48.8466]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-006-saint-germain-001",
+        "street_name": "Boulevard Saint-Germain",
+        "arrondissement": "6",
+        "length_meters": 830,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3297, 48.8541], [2.3387, 48.8516]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-007-universite-001",
+        "street_name": "Rue de l'Universite",
+        "arrondissement": "7",
+        "length_meters": 920,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3020, 48.8590], [2.3120, 48.8580]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-008-champs-elysees-001",
+        "street_name": "Avenue des Champs-Elysees",
+        "arrondissement": "8",
+        "length_meters": 1060,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3069, 48.8698], [2.3211, 48.8656]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-009-martyrs-001",
+        "street_name": "Rue des Martyrs",
+        "arrondissement": "9",
+        "length_meters": 700,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3388, 48.8760], [2.3419, 48.8818]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-010-magenta-001",
+        "street_name": "Boulevard de Magenta",
+        "arrondissement": "10",
+        "length_meters": 880,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3599, 48.8715], [2.3499, 48.8795]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-011-oberkampf-001",
+        "street_name": "Rue Oberkampf",
+        "arrondissement": "11",
+        "length_meters": 740,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3705, 48.8645], [2.3794, 48.8658]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-012-daumesnil-001",
+        "street_name": "Avenue Daumesnil",
+        "arrondissement": "12",
+        "length_meters": 980,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3774, 48.8421], [2.3893, 48.8400]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-013-gobelins-001",
+        "street_name": "Avenue des Gobelins",
+        "arrondissement": "13",
+        "length_meters": 650,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3522, 48.8336], [2.3528, 48.8393]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-014-daguerre-001",
+        "street_name": "Rue Daguerre",
+        "arrondissement": "14",
+        "length_meters": 520,
+        "accessibility": "public_walk"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3260, 48.8345], [2.3317, 48.8343]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-015-commerce-001",
+        "street_name": "Rue du Commerce",
+        "arrondissement": "15",
+        "length_meters": 730,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.2936, 48.8461], [2.2962, 48.8524]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-016-passy-001",
+        "street_name": "Rue de Passy",
+        "arrondissement": "16",
+        "length_meters": 610,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.2796, 48.8571], [2.2842, 48.8582]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-017-batignolles-001",
+        "street_name": "Rue des Batignolles",
+        "arrondissement": "17",
+        "length_meters": 640,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3173, 48.8844], [2.3218, 48.8885]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-018-abbesses-001",
+        "street_name": "Rue des Abbesses",
+        "arrondissement": "18",
+        "length_meters": 560,
+        "accessibility": "public_walk"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3342, 48.8847], [2.3403, 48.8849]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-019-crimee-001",
+        "street_name": "Rue de Crimee",
+        "arrondissement": "19",
+        "length_meters": 900,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3778, 48.8797], [2.3864, 48.8868]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "paris-020-menilmontant-001",
+        "street_name": "Rue de Menilmontant",
+        "arrondissement": "20",
+        "length_meters": 870,
+        "accessibility": "public_walk_cycle"
+      },
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[2.3851, 48.8668], [2.3936, 48.8716]]
+      }
+    }
+  ]
+}
