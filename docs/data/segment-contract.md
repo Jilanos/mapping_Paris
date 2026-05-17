@@ -2,9 +2,11 @@
 
 ## Purpose
 
-This contract defines the source segment dataset consumed by the Android app and produced by the future OpenStreetMap preprocessing pipeline.
+This contract defines the source segment dataset produced by the OpenStreetMap preprocessing pipeline and inspected in the Chrome PWA tester before Android import.
 
 The source dataset contains street segment facts only. User progress is stored separately in the Android app and must not be written into this file.
+
+The target dataset is a dense Paris intra-muros mesh. It is not a one-segment-per-arrondissement sample.
 
 ## Format
 
@@ -21,17 +23,23 @@ Coordinates follow GeoJSON order: longitude, latitude.
 - `arrondissement`: arrondissement label used for statistics.
 - `length_meters`: segment length in meters.
 - `accessibility`: pragmatic metadata when available.
+- `source`: original data source, currently `openstreetmap`.
+- `source_way_id`: OSM way id used to generate the segment.
+- `source_way_index`: index of the generated segment inside the source way.
+- `source_node_count`: count of OSM nodes used before simplification.
+- `highway`: OSM highway type.
 
 ## Explicitly excluded properties
 
 - `completed`
 - `visited`
 - `progress`
+- `validated`
 - any user-specific state
 
 ## Segment id rules
 
-Segment ids are stable app references. The first MVP seed uses readable ids such as `paris-001-rivoli-001`.
+Segment ids are stable app references. Generated ids use a deterministic hash prefix such as `paris-seg-...`.
 
 Future generated ids should remain stable across dataset refreshes whenever the represented segment is unchanged.
 
@@ -43,17 +51,24 @@ Arrondissement assignment can be approximate or arbitrary for ambiguous or bound
 
 Geometry can be simplified. The rendered Paris street network must remain understandable at normal map zoom levels, but the line does not need to reproduce the exact shape of every street.
 
+The first generated mesh treats each filtered OSM way as a clickable segment and simplifies its polyline with a documented tolerance. This is a pragmatic first segmentation pass designed for PWA visual inspection.
+
 ## Example
 
 ```json
 {
   "type": "Feature",
   "properties": {
-    "id": "paris-001-rivoli-001",
+    "id": "paris-seg-4f0b998f01d3",
     "street_name": "Rue de Rivoli",
     "arrondissement": "1",
     "length_meters": 620,
-    "accessibility": "public_walk_cycle"
+    "accessibility": "public_walk_cycle",
+    "source": "openstreetmap",
+    "source_way_id": 123456,
+    "source_way_index": 0,
+    "source_node_count": 8,
+    "highway": "residential"
   },
   "geometry": {
     "type": "LineString",

@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Done
 
 Understanding: 95%
 
 Confidence: 90%
 
-Progress: 0%
+Progress: 100%
 
 Complexity: Medium
 
@@ -74,6 +74,8 @@ Urgency: High
 ## Notes
 
 This item should happen before implementation work. It corrects the product and technical foundation.
+
+Completed through `docs/data/segment-contract.md` and ADR updates. The contract now targets a dense generated Paris mesh and explicitly separates source geometry from validation state.
 
 ## Task coverage
 

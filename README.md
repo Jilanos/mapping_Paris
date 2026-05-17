@@ -32,4 +32,10 @@ The project has an MVP Android scaffold with:
 - local Room persistence for progress;
 - global and arrondissement statistics.
 
-APK validation is pending because the local shell does not currently expose a JDK, Gradle, or Android SDK.
+The segment work has been corrected with a dense generated Paris mesh and a local Chrome PWA tester:
+
+- `data/generated/paris_segments.geojson` contains the first generated dense segment dataset;
+- `tools/segment_pipeline/` contains the repeatable generation and validation scripts;
+- `pwa/` contains a local inspection tester for rendering, clicking, validating, and unvalidating segments.
+
+The generated mesh is ready for visual inspection and filter refinement before replacing the Android seed dataset.

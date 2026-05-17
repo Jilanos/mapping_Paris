@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Done
 
 Understanding: 95%
 
-Confidence: 85%
+Confidence: 90%
 
-Progress: 0%
+Progress: 100%
 
 Complexity: High
 
@@ -144,8 +144,6 @@ Backlog coverage:
 
 ## Open questions
 
-- What exact Paris boundary source should be used for intra-muros clipping?
-- Which OSM `highway` values should be included in the first full extraction?
-- Should the PWA tester persist validation state in browser local storage, a local file export, or both?
-- What format should be considered definitive for Android import: GeoJSON, compact JSON, or another derived format?
-- What quality threshold defines an acceptable simplification level for the first generated mesh?
+- Should the next generation pass reduce `footway` and `steps` density, or keep every walkable micro-way for inspection?
+- Should the Android import consume this GeoJSON directly or a compact derived JSON generated from it?
+- What visual quality threshold is acceptable after manual Chrome inspection of the first generated mesh?

@@ -52,6 +52,9 @@ dist/
 site/
 *.egg-info/
 
+# Generated/raw map data
+data/raw/
+
 # Virtual environments
 .venv/
 venv/

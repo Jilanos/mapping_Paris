@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Done
 
 Understanding: 90%
 
-Confidence: 80%
+Confidence: 85%
 
-Progress: 0%
+Progress: 100%
 
 Complexity: High
 
@@ -74,6 +74,8 @@ Urgency: High
 ## Notes
 
 The pipeline may be Python or another pragmatic local tooling path, but it must be outside Android.
+
+Implemented in `tools/segment_pipeline/generate_paris_segments.py`. The first extraction uses Overpass, OSM highway filtering, access filtering, and pragmatic bounding-box exclusions for the Bois de Boulogne and Bois de Vincennes.
 
 ## Task coverage
 

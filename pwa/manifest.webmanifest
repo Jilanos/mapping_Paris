@@ -1,0 +1,9 @@
+{
+  "name": "mapping Paris segment tester",
+  "short_name": "Segments Paris",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#f6f8fa",
+  "theme_color": "#f6f8fa",
+  "icons": []
+}

@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Done
 
 Understanding: 95%
 
 Confidence: 85%
 
-Progress: 0%
+Progress: 100%
 
 Complexity: High
 
@@ -76,6 +76,8 @@ Urgency: High
 ## Notes
 
 The PWA should be utilitarian and inspection-focused. It does not need a polished consumer UI.
+
+Implemented under `pwa/`. It loads `data/generated/paris_segments.geojson`, renders the dense segment mesh with Leaflet canvas rendering, supports click selection, and shows segment metadata.
 
 ## Task coverage
 

@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f6f8fa" />
+    <title>mapping Paris - testeur segments</title>
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link
+      rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIINfQ6EGq8Y2ZdBRC04CwzM0ldRZ9jD8D4="
+      crossorigin=""
+    />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <header class="header">
+          <h1>mapping Paris</h1>
+          <p>Testeur du maillage de segments</p>
+        </header>
+
+        <section class="panel">
+          <h2>Dataset</h2>
+          <dl class="stats">
+            <div>
+              <dt>Segments</dt>
+              <dd id="totalSegments">Chargement</dd>
+            </div>
+            <div>
+              <dt>Validés</dt>
+              <dd id="validatedSegments">0</dd>
+            </div>
+            <div>
+              <dt>Arrondissement</dt>
+              <dd id="arrondissementValue">-</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section class="panel">
+          <h2>Segment sélectionné</h2>
+          <div id="segmentDetails" class="details empty">Clique un segment sur la carte.</div>
+          <div class="actions">
+            <button id="toggleValidation" type="button" disabled>Valider</button>
+            <button id="clearSelection" type="button" disabled>Déselectionner</button>
+          </div>
+        </section>
+
+        <section class="panel">
+          <h2>Validation</h2>
+          <div class="actions">
+            <button id="exportValidation" type="button">Exporter</button>
+            <button id="resetValidation" type="button">Réinitialiser</button>
+          </div>
+        </section>
+      </aside>
+
+      <main class="map-region">
+        <div id="map" aria-label="Carte des segments de Paris"></div>
+      </main>
+    </div>
+
+    <script
+      src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+      integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+      crossorigin=""
+    ></script>
+    <script src="./app.js"></script>
+  </body>
+</html>

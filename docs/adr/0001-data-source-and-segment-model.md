@@ -10,15 +10,19 @@ The project needs a practical street segment dataset for Paris intra-muros. The 
 
 The dataset must exclude the Bois de Boulogne and Bois de Vincennes. It should focus on ways that represent streets, paths, or cycleable/walkable public passages useful for the personal tracking goal. The exact OpenStreetMap filtering rules can stay pragmatic and may be refined later.
 
+The current target dataset is a dense generated segment mesh, not a small representative seed. The Chrome PWA tester is the validation surface for inspecting this mesh before Android import.
+
 ## Decision
 
 The project will use OpenStreetMap as the street data source.
 
-Street segments will be generated outside the Android app by a dedicated preprocessing pipeline. The Android app will consume a local preprocessed file, probably GeoJSON, containing segments for Paris intra-muros.
+Street segments will be generated outside the Android app by a dedicated preprocessing pipeline. The first generated dataset is a GeoJSON file containing a dense Paris intra-muros segment mesh.
 
 User progress will be stored separately inside the Android app, probably with Room. The source segment file must not contain a `completed` field or any other user-specific progress state.
 
-Segment ids will be defined before app integration and used as stable references by the Android app. Arrondissement attribution may be arbitrary for ambiguous or boundary-crossing segments. Geometry may be simplified: the goal is to represent Paris street segments clearly enough for personal tracking, not to preserve the exact shape of every street.
+Segment ids will be defined before app integration and used as stable references by the PWA tester and later Android app. Arrondissement attribution may be arbitrary for ambiguous or boundary-crossing segments. Geometry may be simplified: the goal is to represent Paris street segments clearly enough for personal tracking, not to preserve the exact shape of every street.
+
+The first dense generation pass treats each filtered OSM way as a clickable segment and keeps validation state in the PWA separate from the source dataset.
 
 Conceptual segment model:
 
@@ -37,6 +41,7 @@ Conceptual segment model:
 - The app can remain local-first with no backend or account system.
 - Dataset quality depends on the preprocessing pipeline and OpenStreetMap coverage.
 - Some arrondissement and geometry details may be approximate by design.
+- The PWA tester becomes the first gate for visual segment quality before Android import.
 
 ## Alternatives considered
 
