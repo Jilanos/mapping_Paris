@@ -73,6 +73,10 @@ Urgency: High
 
 GeoJSON is acceptable if it stays usable for PWA inspection and later Android import. A compact derived JSON can be considered later if size becomes a problem.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - Large GeoJSON files may affect browser and mobile performance.

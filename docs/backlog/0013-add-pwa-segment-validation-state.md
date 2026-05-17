@@ -73,6 +73,10 @@ Urgency: High
 
 Browser local storage is acceptable for the first version if it can be reset and inspected. File export is preferable if validation evidence must be kept outside the browser.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - Large validation maps may need a compact storage structure.

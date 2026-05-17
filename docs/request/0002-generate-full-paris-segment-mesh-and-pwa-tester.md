@@ -138,6 +138,10 @@ Backlog coverage:
 - Existing ADR to revise or supersede: `docs/adr/0001-data-source-and-segment-model.md`
 - Existing Android MVP request affected by this correction: `docs/request/0001-deliver-manual-paris-segment-tracking-mvp.md`
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Open questions
 
 - What exact Paris boundary source should be used for intra-muros clipping?

@@ -76,6 +76,10 @@ Urgency: High
 
 The first acceptable version can be pragmatic. Visual inspection in the PWA will drive refinement.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - Intersection splitting can be complex.

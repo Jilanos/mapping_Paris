@@ -77,6 +77,10 @@ Urgency: Medium
 
 This item is the gate before the generated dataset becomes the app dataset.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - Automated checks may miss visually bad segmentation.

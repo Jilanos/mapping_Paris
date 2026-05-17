@@ -75,6 +75,10 @@ Urgency: High
 
 This item should happen before implementation work. It corrects the product and technical foundation.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - If the corrected contract is vague, downstream pipeline and PWA work may reproduce the wrong dataset shape.

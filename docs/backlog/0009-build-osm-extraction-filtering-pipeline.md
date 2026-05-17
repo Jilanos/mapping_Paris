@@ -75,6 +75,10 @@ Urgency: High
 
 The pipeline may be Python or another pragmatic local tooling path, but it must be outside Android.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - OSM tag filtering may need iterative visual inspection.

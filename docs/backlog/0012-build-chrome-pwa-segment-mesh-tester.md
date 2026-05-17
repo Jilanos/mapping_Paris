@@ -77,6 +77,10 @@ Urgency: High
 
 The PWA should be utilitarian and inspection-focused. It does not need a polished consumer UI.
 
+## Task coverage
+
+- `docs/tasks/0003-generate-full-paris-segment-mesh-and-pwa-tester.md`
+
 ## Risks
 
 - Browser rendering performance may require canvas/WebGL or tiled/vector strategies if SVG/DOM is too slow.
