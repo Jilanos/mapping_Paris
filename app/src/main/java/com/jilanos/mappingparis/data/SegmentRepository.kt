@@ -13,7 +13,7 @@ class SegmentRepository(context: Context) {
         dao.observeAll().map { rows -> rows.associate { it.segmentId to it.completed } }
 
     fun loadSegments(): List<StreetSegment> {
-        val json = appContext.assets.open("paris_segments_seed.geojson")
+        val json = appContext.assets.open("paris_segments.geojson")
             .bufferedReader()
             .use { it.readText() }
         return parser.parse(json)

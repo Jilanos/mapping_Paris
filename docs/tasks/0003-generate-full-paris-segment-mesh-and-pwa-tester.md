@@ -64,7 +64,7 @@ In:
 
 Out:
 
-- Android import replacement implementation.
+- Further Android UI refinement after dense dataset import.
 - GPS validation.
 - Backend services.
 - User accounts.
@@ -112,7 +112,7 @@ Out:
 - [x] Wave 7: inspection report and handoff
   - [x] Add a visual inspection checklist.
   - [x] Produce an initial quality report.
-  - [x] Keep Android replacement deferred until visual acceptance.
+  - [x] Replace the Android seed asset after visual acceptance.
   - [x] Update request/backlog/task progress and validation evidence.
 
 ## Acceptance criteria
@@ -130,7 +130,7 @@ Out:
 - PWA validation state is stored separately from the generated source dataset.
 - Dataset quality checks run locally and report useful counts/errors.
 - The generation and validation flow is documented enough to rerun.
-- Further Android import work is deferred until the generated segment shape is accepted.
+- The accepted generated segment shape is imported into the Android asset set.
 
 ## Validation
 
@@ -151,7 +151,7 @@ Result:
 - Segment ids are unique.
 - Source segment data contains no `completed`, `validated`, or user progress field.
 - PWA shell and dataset path are reachable through a local static server.
-- Android validation is intentionally not the main gate for this task.
+- Android debug APK build validates that the generated asset can be packaged.
 
 ## Report
 
@@ -174,7 +174,7 @@ Known limitations:
 
 ## Non-goals
 
-- Do not continue expanding Android behavior until the generated segment dataset and PWA tester direction are validated.
-- Do not preserve the 21-segment seed as target data.
+- Do not continue expanding Android behavior beyond packaging the accepted generated dataset.
+- Do not restore the 21-segment seed as target data.
 - Do not add GPS validation, backend, account, Play Store, or offline map features.
 - Do not block on perfect GIS topology when the generated mesh is visually and operationally useful.

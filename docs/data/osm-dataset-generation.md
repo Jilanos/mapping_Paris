@@ -1,14 +1,14 @@
 # OSM Dataset Generation Notes
 
-## Current MVP dataset
+## Current Android dataset
 
-The current app includes a compact seed dataset at:
+The current Android app includes the generated street dataset at:
 
-- `app/src/main/assets/paris_segments_seed.geojson`
+- `app/src/main/assets/paris_segments.geojson`
 
-This file is intentionally small. It validates the Android MVP loop: local loading, map rendering, segment selection, manual completion, persistence, and statistics.
-
-It is not the final full Paris dataset.
+This file is copied from `data/generated/paris_segments.geojson` after visual
+inspection in the PWA. User progress is stored separately by the app and must
+not be written into this GeoJSON.
 
 ## Target generation approach
 

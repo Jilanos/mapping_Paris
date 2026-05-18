@@ -21,6 +21,8 @@ The repository now contains:
 - an osmdroid map integration in the Android app;
 - a generated Paris street segment dataset at
   `data/generated/paris_segments.geojson`;
+- the same generated dataset packaged in the Android asset
+  `app/src/main/assets/paris_segments.geojson`;
 - a local PWA tester in `pwa/` for visual inspection and manual validation;
 - a repeatable OSM generation and validation pipeline in
   `tools/segment_pipeline/`;
