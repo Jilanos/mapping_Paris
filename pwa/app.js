@@ -78,12 +78,12 @@ function renderMesh(geojson) {
 
 function styleFor(id) {
   if (selectedIds.has(id)) {
-    return { color: "#13dcb3", weight: 11, opacity: 0.76, lineCap: "round", lineJoin: "round" };
+    return { color: "#13dcb3", weight: 11, opacity: 0.76, lineCap: "butt", lineJoin: "round" };
   }
   if (validationState[id]) {
-    return { color: "#16884e", weight: 9, opacity: 0.32, lineCap: "round", lineJoin: "round" };
+    return { color: "#16884e", weight: 9, opacity: 0.32, lineCap: "butt", lineJoin: "round" };
   }
-  return { color: "#d94b42", weight: 9, opacity: 0.26, lineCap: "round", lineJoin: "round" };
+  return { color: "#d94b42", weight: 9, opacity: 0.26, lineCap: "butt", lineJoin: "round" };
 }
 
 function toggleSegmentSelection(id) {

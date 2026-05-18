@@ -30,6 +30,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
 import java.util.Locale
+import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 
@@ -95,9 +96,9 @@ private fun SegmentMap(
         modifier = modifier,
         factory = {
             MapView(context).apply {
+                setTileSource(CartoLightTileSource)
                 setMultiTouchControls(true)
-                setUseDataConnection(false)
-                overlayManager.tilesOverlay.isEnabled = false
+                setUseDataConnection(true)
                 controller.setZoom(13.2)
                 controller.setCenter(GeoPoint(48.8566, 2.3522))
                 val segmentOverlay = SegmentNetworkOverlay(
@@ -107,7 +108,6 @@ private fun SegmentMap(
                     onTapSegment = onSelectSegment,
                     onLongPressSegment = onLongPressSegment
                 )
-                overlays.add(ParisBasemapOverlay())
                 overlays.add(segmentOverlay)
                 tag = SegmentMapOverlayHolder(segmentOverlay)
             }
@@ -134,6 +134,19 @@ private fun SegmentMap(
 
 private data class SegmentMapOverlayHolder(
     val segmentOverlay: SegmentNetworkOverlay
+)
+
+private val CartoLightTileSource = XYTileSource(
+    "CartoLight",
+    0,
+    20,
+    256,
+    ".png",
+    arrayOf(
+        "https://a.basemaps.cartocdn.com/light_all/",
+        "https://b.basemaps.cartocdn.com/light_all/",
+        "https://c.basemaps.cartocdn.com/light_all/"
+    )
 )
 
 @Composable

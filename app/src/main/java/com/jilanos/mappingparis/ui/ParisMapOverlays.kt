@@ -28,11 +28,11 @@ class SegmentNetworkOverlay(
     private val nextPoint = Point()
     private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.ROUND
+        strokeCap = Paint.Cap.BUTT
         strokeJoin = Paint.Join.ROUND
     }
     private val selectedPaint = Paint(basePaint).apply {
-        color = Color.rgb(38, 111, 216)
+        color = Color.argb(194, 19, 220, 179)
         strokeWidth = 11f
     }
 
@@ -81,11 +81,11 @@ class SegmentNetworkOverlay(
             } else {
                 basePaint.apply {
                     color = if (completionStates[segment.id] == true) {
-                        Color.rgb(37, 142, 91)
+                        Color.argb(82, 22, 136, 78)
                     } else {
-                        Color.rgb(196, 78, 66)
+                        Color.argb(66, 217, 75, 66)
                     }
-                    strokeWidth = 5.5f
+                    strokeWidth = 9f
                 }
             }
             drawPolyline(canvas, mapView, segment.geometry, paint)
