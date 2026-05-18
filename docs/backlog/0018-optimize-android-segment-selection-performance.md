@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 92%
 
 Confidence: 84%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: High
 
@@ -86,6 +86,11 @@ Urgency: High
 Likely causes include rebuilding all map overlays on every selection change and
 doing too much work inside the `AndroidView` update block. The task should prove
 the bottleneck before choosing the fix.
+
+Implementation note: the suspected bottleneck was confirmed. The old map update
+path cleared overlays and recreated one `Polyline` per segment on every
+selection update. The app now uses one custom `SegmentNetworkOverlay` and
+updates overlay state without rebuilding thousands of osmdroid objects.
 
 ## Task Coverage
 

@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 92%
 
 Confidence: 88%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: High
 
@@ -241,10 +241,8 @@ small enough to validate with one debug APK build and one manual device pass.
 
 ## Open Questions
 
-- Should the simplified Paris background be generated from local project data,
-  bundled as a static asset, or drawn directly in the Android app?
-- Which landmark source should be used first: a manually curated list, OSM
-  extraction, or a small bundled GeoJSON?
+- Should the repo-stored vector icon source be replaced by the original
+  chat-provided image if the image is reattached later?
 - Should drag/lasso selection be considered later after tap and long-press
   multi-selection are stable?
 - What device should be used as the baseline for "fluid" selection performance?

@@ -1,3 +1,5 @@
+import com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -24,6 +26,13 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+    }
+}
+
+android.applicationVariants.all {
+    outputs.all {
+        val output = this as BaseVariantOutputImpl
+        output.outputFileName = "mapping-paris-$versionName-$name.apk"
     }
 }
 

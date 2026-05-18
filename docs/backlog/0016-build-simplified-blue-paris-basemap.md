@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 90%
 
 Confidence: 78%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: High
 
@@ -90,6 +90,11 @@ Urgency: High
 The implementation may use a local vector/bitmap asset, a custom generated
 basemap, or direct drawing in Android. The first task should decide the smallest
 approach that gives a good orientation layer and remains performant.
+
+Implementation note: the chosen V1 strategy is direct drawing in
+`ParisBasemapOverlay`. Detailed OSM tiles are disabled, and the app draws a
+blue-toned Paris outline, Seine, canals, parks, and landmark labels behind the
+segment network.
 
 ## Task Coverage
 

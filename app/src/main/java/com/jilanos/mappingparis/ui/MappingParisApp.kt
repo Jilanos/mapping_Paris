@@ -1,6 +1,5 @@
 package com.jilanos.mappingparis.ui
 
-import android.graphics.Color
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -13,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -30,10 +30,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
 import java.util.Locale
-import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
-import org.osmdroid.views.overlay.Polyline
 
 @Composable
 fun MappingParisApp(viewModel: MappingParisViewModel) {
@@ -45,8 +43,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                 SegmentMap(
                     segments = uiState.segments,
                     completionStates = uiState.completionStates,
-                    selectedSegmentId = uiState.selectedSegmentId,
+                    selectedSegmentIds = uiState.selectedSegmentIds,
                     onSelectSegment = viewModel::selectSegment,
+                    onLongPressSegment = viewModel::addSegmentToSelection,
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -65,9 +64,12 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     SelectedSegmentPanel(
-                        selectedSegment = uiState.selectedSegment,
-                        isCompleted = uiState.selectedSegmentId?.let { uiState.completionStates[it] == true } == true,
-                        onToggleCompletion = viewModel::toggleSelectedCompletion
+                        selectedSegments = uiState.selectedSegments,
+                        selectedLengthMeters = uiState.selectedLengthMeters,
+                        selectedArrondissementLabel = uiState.selectedArrondissementLabel,
+                        allSelectedCompleted = uiState.allSelectedCompleted,
+                        onToggleCompletion = viewModel::toggleSelectedCompletion,
+                        onClearSelection = viewModel::clearSelection
                     )
                     StatsPanel(
                         globalStats = uiState.globalStats,
@@ -83,8 +85,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
 private fun SegmentMap(
     segments: List<StreetSegment>,
     completionStates: Map<String, Boolean>,
-    selectedSegmentId: String?,
+    selectedSegmentIds: Set<String>,
     onSelectSegment: (String) -> Unit,
+    onLongPressSegment: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -92,32 +95,32 @@ private fun SegmentMap(
         modifier = modifier,
         factory = {
             MapView(context).apply {
-                setTileSource(TileSourceFactory.MAPNIK)
                 setMultiTouchControls(true)
+                setUseDataConnection(false)
+                overlayManager.tilesOverlay.isEnabled = false
                 controller.setZoom(13.2)
                 controller.setCenter(GeoPoint(48.8566, 2.3522))
+                val segmentOverlay = SegmentNetworkOverlay(
+                    segments = segments,
+                    completionStates = completionStates,
+                    selectedSegmentIds = selectedSegmentIds,
+                    onTapSegment = onSelectSegment,
+                    onLongPressSegment = onLongPressSegment
+                )
+                overlays.add(ParisBasemapOverlay())
+                overlays.add(segmentOverlay)
+                tag = SegmentMapOverlayHolder(segmentOverlay)
             }
         },
         update = { mapView ->
-            mapView.overlays.clear()
-            segments.forEach { segment ->
-                val completed = completionStates[segment.id] == true
-                val selected = segment.id == selectedSegmentId
-                val polyline = Polyline().apply {
-                    setPoints(segment.geometry.map { GeoPoint(it.latitude, it.longitude) })
-                    outlinePaint.color = when {
-                        selected -> Color.rgb(25, 92, 184)
-                        completed -> Color.rgb(34, 139, 89)
-                        else -> Color.rgb(191, 79, 64)
-                    }
-                    outlinePaint.strokeWidth = if (selected) 12f else 7f
-                    setOnClickListener { _, _, _ ->
-                        onSelectSegment(segment.id)
-                        true
-                    }
-                }
-                mapView.overlays.add(polyline)
-            }
+            val holder = mapView.tag as? SegmentMapOverlayHolder ?: return@AndroidView
+            holder.segmentOverlay.update(
+                segments = segments,
+                completionStates = completionStates,
+                selectedSegmentIds = selectedSegmentIds,
+                onTapSegment = onSelectSegment,
+                onLongPressSegment = onLongPressSegment
+            )
             mapView.invalidate()
         }
     )
@@ -129,25 +132,47 @@ private fun SegmentMap(
     }
 }
 
+private data class SegmentMapOverlayHolder(
+    val segmentOverlay: SegmentNetworkOverlay
+)
+
 @Composable
 private fun SelectedSegmentPanel(
-    selectedSegment: StreetSegment?,
-    isCompleted: Boolean,
-    onToggleCompletion: () -> Unit
+    selectedSegments: List<StreetSegment>,
+    selectedLengthMeters: Double,
+    selectedArrondissementLabel: String,
+    allSelectedCompleted: Boolean,
+    onToggleCompletion: () -> Unit,
+    onClearSelection: () -> Unit
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        val selectedCount = selectedSegments.size
         Text(
-            text = selectedSegment?.streetName ?: "Aucun segment selectionne",
+            text = if (selectedCount == 0) {
+                "Aucun segment selectionne"
+            } else {
+                "$selectedCount segment${if (selectedCount > 1) "s" else ""} selectionne${if (selectedCount > 1) "s" else ""}"
+            },
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.SemiBold
         )
-        if (selectedSegment != null) {
+        if (selectedCount > 0) {
+            val segmentNames = selectedSegments
+                .map { it.streetName }
+                .distinct()
+                .take(3)
+                .joinToString(", ")
             Text(
-                text = "${selectedSegment.arrondissement} - ${formatMeters(selectedSegment.lengthMeters)} - ${selectedSegment.id}",
+                text = "$selectedArrondissementLabel - ${formatMeters(selectedLengthMeters)} - $segmentNames",
                 style = MaterialTheme.typography.bodyMedium
             )
-            Button(onClick = onToggleCompletion) {
-                Text(if (isCompleted) "Marquer non parcouru" else "Marquer parcouru")
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onToggleCompletion) {
+                    Text(if (allSelectedCompleted) "Marquer non parcouru" else "Marquer parcouru")
+                }
+                OutlinedButton(onClick = onClearSelection) {
+                    Text("Deselectionner")
+                }
             }
         }
     }

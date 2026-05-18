@@ -21,4 +21,7 @@ interface SegmentCompletionDao {
 
     @Upsert
     suspend fun upsert(entity: SegmentCompletionEntity)
+
+    @Upsert
+    suspend fun upsertAll(entities: List<SegmentCompletionEntity>)
 }

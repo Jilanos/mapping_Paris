@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 94%
 
 Confidence: 88%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: Medium
 
@@ -96,6 +96,11 @@ Urgency: High
 
 The first version should avoid drag/lasso selection. Tap and long-press cover
 the interactions the user already tried intuitively.
+
+Implementation note: Android state now stores a selected segment id set. Tap
+toggles a segment, long-press adds a segment, all selected segments remain
+highlighted, and the panel supports batch complete/uncomplete plus clear
+selection.
 
 ## Task Coverage
 

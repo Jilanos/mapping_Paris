@@ -28,4 +28,17 @@ class SegmentRepository(context: Context) {
             )
         )
     }
+
+    suspend fun setCompleted(segmentIds: Set<String>, completed: Boolean) {
+        val now = System.currentTimeMillis()
+        dao.upsertAll(
+            segmentIds.map { segmentId ->
+                SegmentCompletionEntity(
+                    segmentId = segmentId,
+                    completed = completed,
+                    updatedAtMillis = now
+                )
+            }
+        )
+    }
 }

@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 92%
 
 Confidence: 84%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: High
 
@@ -85,44 +85,44 @@ Out:
 
 ## Plan
 
-- [ ] Wave 1: performance audit and render-path fix
-  - [ ] Inspect `MappingParisApp.kt`, `MappingParisViewModel.kt`, and osmdroid
+- [x] Wave 1: performance audit and render-path fix
+  - [x] Inspect `MappingParisApp.kt`, `MappingParisViewModel.kt`, and osmdroid
         overlay usage.
-  - [ ] Confirm whether selection currently rebuilds all segment overlays.
-  - [ ] Add temporary measurement or targeted logging if needed.
-  - [ ] Refactor map update behavior to avoid unnecessary `Polyline`
+  - [x] Confirm whether selection currently rebuilds all segment overlays.
+  - [x] Add temporary measurement or targeted logging if needed.
+  - [x] Refactor map update behavior to avoid unnecessary `Polyline`
         recreation on selection changes.
-  - [ ] Keep completion-state persistence behavior unchanged.
-  - [ ] Record the performance finding in this task report.
-- [ ] Wave 2: Android multi-segment selection
-  - [ ] Replace single selected id state with a selected id set.
-  - [ ] Support tap-to-toggle selection.
-  - [ ] Support long-press entry into multi-selection mode.
-  - [ ] Highlight all selected segments.
-  - [ ] Add selected count, total selected length, and mixed arrondissement
+  - [x] Keep completion-state persistence behavior unchanged.
+  - [x] Record the performance finding in this task report.
+- [x] Wave 2: Android multi-segment selection
+  - [x] Replace single selected id state with a selected id set.
+  - [x] Support tap-to-toggle selection.
+  - [x] Support long-press entry into multi-selection mode.
+  - [x] Highlight all selected segments.
+  - [x] Add selected count, total selected length, and mixed arrondissement
         display.
-  - [ ] Add selected-set complete and uncomplete behavior.
-  - [ ] Add clear selection behavior.
-- [ ] Wave 3: simplified blue Paris basemap
-  - [ ] Choose the smallest viable basemap strategy for this APK.
-  - [ ] Implement a blue-toned background aligned with the app image.
-  - [ ] Include Paris outline, Seine, canals, useful street names, and selected
+  - [x] Add selected-set complete and uncomplete behavior.
+  - [x] Add clear selection behavior.
+- [x] Wave 3: simplified blue Paris basemap
+  - [x] Choose the smallest viable basemap strategy for this APK.
+  - [x] Implement a blue-toned background aligned with the app image.
+  - [x] Include Paris outline, Seine, canals, useful street names, and selected
         landmarks.
-  - [ ] Ensure the segment network remains readable over the background.
-  - [ ] Remove or visually demote detailed OSM tiles.
-- [ ] Wave 4: app image, launcher icon, and APK naming
-  - [ ] Store the provided image source under the Android app/project folder.
-  - [ ] Generate launcher icon resources from the image.
-  - [ ] Update manifest/resource references for the app icon.
-  - [ ] Configure APK output filename as
+  - [x] Ensure the segment network remains readable over the background.
+  - [x] Remove or visually demote detailed OSM tiles.
+- [x] Wave 4: app image, launcher icon, and APK naming
+  - [x] Store the app icon source under the Android app/project folder.
+  - [x] Generate launcher icon resources from the image direction.
+  - [x] Update manifest/resource references for the app icon.
+  - [x] Configure APK output filename as
         `mapping-paris-<version>-<buildType>.apk`.
-  - [ ] Confirm generated debug APK filename includes version and build type.
-- [ ] Wave 5: validation and documentation
-  - [ ] Update relevant docs and backlog task coverage.
-  - [ ] Run dataset validation against the packaged Android asset.
-  - [ ] Run Android debug APK build.
-  - [ ] Verify the APK contains expected assets.
-  - [ ] Document manual device validation steps and any remaining risks.
+  - [x] Confirm generated debug APK filename includes version and build type.
+- [x] Wave 5: validation and documentation
+  - [x] Update relevant docs and backlog task coverage.
+  - [x] Run dataset validation against the packaged Android asset.
+  - [x] Run Android debug APK build.
+  - [x] Verify the APK contains expected assets.
+  - [x] Document manual device validation steps and any remaining risks.
 
 ## Acceptance Criteria
 
@@ -182,7 +182,74 @@ Manual checks:
 
 ## Report
 
-Pending.
+Implemented on 2026-05-18.
+
+Performance finding:
+
+- `SegmentMap(...)` previously executed `mapView.overlays.clear()` inside
+  `AndroidView(update = { ... })`.
+- Every selection state change then recreated one osmdroid `Polyline` for each
+  loaded segment.
+- With the packaged 15,295 segment dataset, this meant thousands of overlay
+  allocations and listener registrations on the selection path.
+
+Implementation:
+
+- Added `SegmentNetworkOverlay`, a single custom osmdroid overlay that draws
+  the segment network directly on canvas.
+- `AndroidView(update)` now updates the overlay state and invalidates the map
+  instead of rebuilding all segment overlay objects.
+- Added hit-testing inside the custom overlay for tap and long-press selection.
+- Replaced single selected segment state with a selected segment id set.
+- Added batch complete/uncomplete behavior for the selected set while keeping
+  completion state in Room, separate from source GeoJSON.
+- Added selected count, total selected length, mixed arrondissement display, and
+  clear selection action.
+- Disabled detailed OSM tile rendering and added a lightweight blue
+  `ParisBasemapOverlay` with Paris outline, Seine, canals, parks, and landmark
+  labels.
+- Added Android launcher icon resources and manifest references.
+- Configured debug APK naming as `mapping-paris-0.1.0-debug.apk`.
+
+Validation results:
+
+```powershell
+py -3 tools\segment_pipeline\validate_segments.py app\src\main\assets\paris_segments.geojson
+# OK: 15,295 features, duplicate_id_count 0
+
+npm run check:pwa
+# OK
+
+node --check tools\dev-server.mjs
+# OK
+
+.\gradlew.bat --no-daemon --stacktrace assembleDebug
+# BUILD SUCCESSFUL
+
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\debug\mapping-paris-0.1.0-debug.apk
+# OK: Android Debug certificate
+
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\aapt.exe" list app\build\outputs\apk\debug\mapping-paris-0.1.0-debug.apk
+# Verified: assets/paris_segments.geojson and launcher icon resources are packaged
+```
+
+APK output:
+
+- `app/build/outputs/apk/debug/mapping-paris-0.1.0-debug.apk`
+
+Remaining manual checks:
+
+- Install the APK on a phone.
+- Confirm tap and long-press segment selection feel fluid on device.
+- Confirm the simplified blue basemap and launcher icon are visually acceptable.
+
+Known limitation:
+
+- The original chat-provided app image was not available as a local file in this
+  execution context. A repo-stored vector icon source aligned with the requested
+  dark blue Paris-map direction was added instead. Replace
+  `app/src/main/res/drawable/app_icon_source.xml` with the original image-derived
+  asset if the source image is reattached later.
 
 ## Non-Goals
 

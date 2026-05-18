@@ -19,10 +19,33 @@ import kotlinx.coroutines.launch
 data class MappingParisUiState(
     val segments: List<StreetSegment> = emptyList(),
     val completionStates: Map<String, Boolean> = emptyMap(),
-    val selectedSegmentId: String? = null
+    val selectedSegmentIds: Set<String> = emptySet()
 ) {
+    val selectedSegmentId: String?
+        get() = selectedSegmentIds.firstOrNull()
+
     val selectedSegment: StreetSegment?
         get() = segments.firstOrNull { it.id == selectedSegmentId }
+
+    val selectedSegments: List<StreetSegment>
+        get() = segments.filter { it.id in selectedSegmentIds }
+
+    val selectedLengthMeters: Double
+        get() = selectedSegments.sumOf { it.lengthMeters }
+
+    val selectedArrondissementLabel: String
+        get() {
+            val arrondissements = selectedSegments.map { it.arrondissement }.distinct()
+            return when (arrondissements.size) {
+                0 -> "Aucun arrondissement"
+                1 -> arrondissements.first()
+                else -> "Arrondissements mixtes"
+            }
+        }
+
+    val allSelectedCompleted: Boolean
+        get() = selectedSegmentIds.isNotEmpty() &&
+            selectedSegmentIds.all { completionStates[it] == true }
 
     val globalStats: CompletionStats
         get() = segments.completionStats(completionStates)
@@ -33,15 +56,15 @@ data class MappingParisUiState(
 
 class MappingParisViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SegmentRepository(application)
-    private val selectedSegmentId = MutableStateFlow<String?>(null)
+    private val selectedSegmentIds = MutableStateFlow<Set<String>>(emptySet())
     private val segments = MutableStateFlow(repository.loadSegments())
 
     val uiState: StateFlow<MappingParisUiState> =
-        combine(segments, repository.completionStates, selectedSegmentId) { loadedSegments, states, selectedId ->
+        combine(segments, repository.completionStates, selectedSegmentIds) { loadedSegments, states, selectedIds ->
             MappingParisUiState(
                 segments = loadedSegments,
                 completionStates = states,
-                selectedSegmentId = selectedId
+                selectedSegmentIds = selectedIds
             )
         }.stateIn(
             scope = viewModelScope,
@@ -50,14 +73,36 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         )
 
     fun selectSegment(segmentId: String) {
-        selectedSegmentId.update { segmentId }
+        selectedSegmentIds.update { current ->
+            if (segmentId in current) {
+                current - segmentId
+            } else {
+                current + segmentId
+            }
+        }
+    }
+
+    fun addSegmentToSelection(segmentId: String) {
+        selectedSegmentIds.update { current -> current + segmentId }
+    }
+
+    fun clearSelection() {
+        selectedSegmentIds.update { emptySet() }
     }
 
     fun toggleSelectedCompletion() {
-        val id = selectedSegmentId.value ?: return
-        val current = uiState.value.completionStates[id] == true
+        val ids = selectedSegmentIds.value
+        if (ids.isEmpty()) return
+        val completed = !uiState.value.allSelectedCompleted
         viewModelScope.launch {
-            repository.setCompleted(segmentId = id, completed = !current)
+            repository.setCompleted(segmentIds = ids, completed = completed)
+        }
+    }
+
+    fun toggleSingleCompletion(segmentId: String) {
+        val current = uiState.value.completionStates[segmentId] == true
+        viewModelScope.launch {
+            repository.setCompleted(segmentId = segmentId, completed = !current)
         }
     }
 }

@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 92%
 
 Confidence: 86%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: Medium
 
@@ -83,6 +83,12 @@ Urgency: High
 
 The source image may be processed for density and adaptive icon constraints, but
 the result should remain visually close to the supplied dark blue Paris icon.
+
+Implementation note: the original chat-provided image was not available as a
+local file during execution, so the Android app now uses a repo-stored vector
+icon source at `app/src/main/res/drawable/app_icon_source.xml` and adaptive icon
+resources derived from that visual direction. The generated APK is
+`app/build/outputs/apk/debug/mapping-paris-0.1.0-debug.apk`.
 
 ## Task Coverage
 
