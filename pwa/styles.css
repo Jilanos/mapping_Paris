@@ -273,23 +273,6 @@ button:disabled {
   background: #dbe8f2;
 }
 
-.street-label {
-  width: max-content !important;
-  max-width: 220px;
-  padding: 1px 4px;
-  border-radius: 3px;
-  background: rgba(250, 253, 255, 0.82);
-  color: #26405d;
-  border: 1px solid rgba(112, 135, 164, 0.32);
-  font-size: 10px;
-  line-height: 1.15;
-  font-weight: 700;
-  white-space: nowrap;
-  pointer-events: none;
-  text-shadow: 0 1px 0 #ffffff;
-  transform: translate(-50%, -50%);
-}
-
 .leaflet-control-attribution {
   font-size: 10px;
 }

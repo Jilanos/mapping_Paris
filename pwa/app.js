@@ -1,8 +1,6 @@
 const DATASET_URL = "/data/generated/paris_segments.geojson";
 const VALIDATION_STORAGE_KEY = "mappingParis.segmentValidation.v1";
 const PARIS_BOUNDS = L.latLngBounds([48.815, 2.224], [48.906, 2.47]);
-const STREET_LABEL_MIN_ZOOM = 15;
-
 const elements = {
   totalSegments: document.querySelector("#totalSegments"),
   validatedSegments: document.querySelector("#validatedSegments"),
@@ -29,10 +27,8 @@ const map = L.map("map", {
 
 map.createPane("streetContext");
 map.createPane("segments");
-map.createPane("streetLabels");
 map.getPane("streetContext").style.zIndex = 410;
 map.getPane("segments").style.zIndex = 430;
-map.getPane("streetLabels").style.zIndex = 460;
 
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   bounds: PARIS_BOUNDS.pad(0.35),
@@ -49,7 +45,6 @@ const selectedIds = new Set();
 let dataset = null;
 let meshLayer = null;
 let streetContextLayer = null;
-let streetLabelLayer = null;
 
 bootstrap();
 
@@ -61,7 +56,6 @@ async function bootstrap() {
   elements.totalSegments.textContent = dataset.features.length.toLocaleString("fr-FR");
   renderStreetContext(dataset);
   renderMesh(dataset);
-  renderStreetLabels(dataset);
   updateValidatedStats();
   renderSelectionDetails();
 }
@@ -103,56 +97,6 @@ function renderMesh(geojson) {
     map.fitBounds(bounds, { padding: [18, 18] });
     window.requestAnimationFrame(() => map.invalidateSize());
   }
-}
-
-function renderStreetLabels(geojson) {
-  streetLabelLayer = L.layerGroup([], { pane: "streetLabels" }).addTo(map);
-  const labels = buildStreetLabels(geojson.features);
-  labels.forEach((label) => {
-    L.marker([label.latitude, label.longitude], {
-      pane: "streetLabels",
-      interactive: false,
-      icon: L.divIcon({
-        className: "street-label",
-        html: escapeHtml(label.name),
-        iconSize: null,
-      }),
-    }).addTo(streetLabelLayer);
-  });
-  updateStreetLabelVisibility();
-  map.on("zoomend", updateStreetLabelVisibility);
-}
-
-function buildStreetLabels(features) {
-  const byName = new Map();
-  features.forEach((feature) => {
-    const name = feature.properties.street_name;
-    if (!name || name === "Sans nom") return;
-    const coordinates = feature.geometry.coordinates;
-    if (!Array.isArray(coordinates) || coordinates.length === 0) return;
-    const midpoint = coordinates[Math.floor(coordinates.length / 2)];
-    const current = byName.get(name) || { name, count: 0, longitude: 0, latitude: 0 };
-    current.count += 1;
-    current.longitude += Number(midpoint[0]);
-    current.latitude += Number(midpoint[1]);
-    byName.set(name, current);
-  });
-
-  return [...byName.values()]
-    .map((entry) => ({
-      name: entry.name,
-      longitude: entry.longitude / entry.count,
-      latitude: entry.latitude / entry.count,
-      count: entry.count,
-    }))
-    .sort((a, b) => b.count - a.count);
-}
-
-function updateStreetLabelVisibility() {
-  if (!streetLabelLayer) return;
-  const visible = map.getZoom() >= STREET_LABEL_MIN_ZOOM;
-  const pane = map.getPane("streetLabels");
-  pane.style.display = visible ? "block" : "none";
 }
 
 function styleFor(id) {

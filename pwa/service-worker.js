@@ -1,4 +1,4 @@
-const CACHE_NAME = "mapping-paris-pwa-v5";
+const CACHE_NAME = "mapping-paris-pwa-v6";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
