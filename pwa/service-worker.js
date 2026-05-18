@@ -1,15 +1,19 @@
-const CACHE_NAME = "mapping-paris-pwa-v1";
+const CACHE_NAME = "mapping-paris-pwa-v2";
 const APP_SHELL = ["./", "./index.html", "./styles.css", "./app.js", "./manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
+  self.skipWaiting();
   event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)));
 });
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    )
+    caches
+      .keys()
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      )
+      .then(() => self.clients.claim())
   );
 });
 
@@ -18,7 +22,16 @@ self.addEventListener("fetch", (event) => {
   if (url.pathname.endsWith("/data/generated/paris_segments.geojson")) {
     return;
   }
+
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((response) => {
+        if (event.request.method === "GET" && url.origin === self.location.origin) {
+          const responseCopy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, responseCopy));
+        }
+        return response;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

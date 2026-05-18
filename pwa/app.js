@@ -55,6 +55,7 @@ function renderMesh(geojson) {
   const bounds = meshLayer.getBounds();
   if (bounds.isValid()) {
     map.fitBounds(bounds, { padding: [18, 18] });
+    window.requestAnimationFrame(() => map.invalidateSize());
   }
 }
 
@@ -175,7 +176,10 @@ function saveValidationState() {
 
 function registerServiceWorker() {
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("./service-worker.js").catch(() => undefined);
+    navigator.serviceWorker
+      .register("./service-worker.js", { updateViaCache: "none" })
+      .then((registration) => registration.update())
+      .catch(() => undefined);
   }
 }
 
