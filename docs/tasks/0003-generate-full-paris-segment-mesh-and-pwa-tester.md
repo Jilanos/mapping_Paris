@@ -53,7 +53,7 @@ In:
 - Revise or supersede the existing ADR if needed.
 - Build a repeatable OSM extraction/filtering pipeline.
 - Exclude areas outside Paris intra-muros.
-- Exclude the Bois de Boulogne and the Bois de Vincennes.
+- Keep streets inside the Boulevard Peripherique, which excludes the Bois de Boulogne and the Bois de Vincennes without cutting into Auteuil or Bel-Air.
 - Simplify road geometry while preserving general street shapes.
 - Segment the road mesh into many individual clickable elements.
 - Export a definitive segment dataset.
@@ -119,7 +119,7 @@ Out:
 
 - The generated dataset is a dense Paris intra-muros segment mesh, not a small sample.
 - The dataset contains many individual segments per arrondissement where street density requires it.
-- The Bois de Boulogne and the Bois de Vincennes are excluded.
+- Streets outside the Boulevard Peripherique are excluded.
 - Each segment is an independent source element with a stable id.
 - Each segment has simplified polyline geometry that remains close to the road's general shape.
 - Source segment data contains no validation, completion, or user progress state.
@@ -169,7 +169,7 @@ Implemented a corrected dense Paris segment generation path and a Chrome PWA tes
 Known limitations:
 
 - Arrondissement assignment is approximate and uses nearest arrondissement center logic.
-- Bois exclusions use pragmatic bounding boxes.
+- Intra-muros filtering now uses a pragmatic Boulevard Peripherique polygon instead of broad Bois exclusion boxes.
 - The first extraction is intentionally broad and includes many `footway` and `steps` features; the next practical step is visual inspection in Chrome and filter refinement if the mesh is too dense or includes irrelevant micro-ways.
 
 ## Non-goals

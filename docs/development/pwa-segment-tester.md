@@ -11,7 +11,7 @@ It is not the final Android app.
 From the repository root:
 
 ```powershell
-py -3 -m http.server 5173
+npm run dev
 ```
 
 Then open:
@@ -32,9 +32,9 @@ data/generated/paris_segments.geojson
 
 - Displays the generated Paris segment mesh.
 - Uses canvas rendering through Leaflet for a dense dataset.
-- Lets the user click one segment.
-- Shows segment metadata.
-- Lets the user validate or unvalidate the selected segment.
+- Lets the user click one or more segments.
+- Shows single-segment metadata or multi-segment summary details.
+- Lets the user validate or unvalidate the selected segment set.
 - Stores validation state in browser local storage.
 - Allows exporting validation state to a JSON file.
 
@@ -44,5 +44,5 @@ Run:
 
 ```powershell
 py -3 tools/segment_pipeline/validate_pwa.py
-node --check pwa/app.js
+npm run check:pwa
 ```

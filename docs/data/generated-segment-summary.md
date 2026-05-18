@@ -1,49 +1,46 @@
 # Generated Segment Dataset Summary
 
-Generated at: 2026-05-17T20:29:49Z
+Generated at: 2026-05-18T10:36:11Z
 
-Total segments: 96583
-Total length: 5695.86 km
+Total segments: 15295
+Total length: 1430.73 km
 
 ## Segments by Arrondissement
 
-- 1: 2900
-- 10: 5500
-- 11: 4064
-- 12: 5102
-- 13: 6797
-- 14: 6645
-- 15: 6773
-- 16: 5463
-- 17: 5238
-- 18: 6292
-- 19: 6508
-- 2: 2276
-- 20: 6069
-- 3: 2798
-- 4: 3823
-- 5: 3184
-- 6: 3480
-- 7: 4108
-- 8: 5034
-- 9: 4529
+- 1: 369
+- 10: 787
+- 11: 556
+- 12: 1207
+- 13: 1057
+- 14: 1049
+- 15: 1108
+- 16: 1260
+- 17: 1021
+- 18: 998
+- 19: 735
+- 2: 311
+- 20: 900
+- 3: 422
+- 4: 577
+- 5: 443
+- 6: 548
+- 7: 626
+- 8: 709
+- 9: 612
 
 ## Segments by Highway Type
 
-- cycleway: 3601
-- footway: 71188
-- living_street: 629
-- path: 238
-- pedestrian: 1651
-- primary: 2353
-- residential: 8775
-- secondary: 1620
-- steps: 4765
-- tertiary: 1511
+- living_street: 648
+- pedestrian: 1706
+- primary: 2293
+- residential: 7130
+- secondary: 1690
+- tertiary: 1576
 - unclassified: 252
 
 ## Known Limitations
 
 - Arrondissement assignment uses nearest arrondissement center approximation.
-- Bois exclusions use pragmatic bounding boxes for the first generated mesh.
+- Intra-muros filtering uses a pragmatic hand-drawn Boulevard Peripherique polygon.
+- The first street-only mesh excludes footways, paths, steps, and cycleways to avoid sidewalk/internal-path duplication.
 - Geometry is generated from filtered OSM ways and simplified for visual inspection in the PWA.

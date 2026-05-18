@@ -23,16 +23,25 @@ INCLUDED_HIGHWAYS = {
     "unclassified",
     "living_street",
     "pedestrian",
-    "footway",
-    "cycleway",
-    "path",
-    "steps",
 }
 
 EXCLUDED_ACCESS = {"private", "no", "customers", "delivery", "emergency"}
 
-BOIS_DE_BOULOGNE_BBOX = (2.224, 48.841, 2.281, 48.886)
-BOIS_DE_VINCENNES_BBOX = (2.398, 48.819, 2.472, 48.852)
+PARIS_DATA_BBOX = (2.224, 48.815, 2.470, 48.906)
+
+PERIPHERIQUE_POLYGON = [
+    (2.255, 48.897),
+    (2.300, 48.902),
+    (2.365, 48.901),
+    (2.405, 48.889),
+    (2.418, 48.865),
+    (2.414, 48.833),
+    (2.392, 48.818),
+    (2.320, 48.817),
+    (2.270, 48.826),
+    (2.248, 48.848),
+    (2.246, 48.872),
+]
 
 ARRONDISSEMENT_CENTERS = {
     "1": (2.3364, 48.8626),
@@ -62,7 +71,7 @@ def build_query() -> str:
     highway_regex = "|".join(sorted(INCLUDED_HIGHWAYS))
     return f"""
 [out:json][timeout:240];
-area["name"="Paris"]["boundary"="administrative"]["admin_level"="8"]->.paris;
+area["ref:INSEE"="75056"]["boundary"="administrative"]["admin_level"="8"]->.paris;
 (
   way(area.paris)["highway"~"^({highway_regex})$"]["area"!="yes"]["access"!="private"]["access"!="no"];
 );
@@ -103,8 +112,20 @@ def in_bbox(point: tuple[float, float], bbox: tuple[float, float, float, float])
     return min_lon <= lon <= max_lon and min_lat <= lat <= max_lat
 
 
-def in_excluded_wood(point: tuple[float, float]) -> bool:
-    return in_bbox(point, BOIS_DE_BOULOGNE_BBOX) or in_bbox(point, BOIS_DE_VINCENNES_BBOX)
+def in_polygon(point: tuple[float, float], polygon: list[tuple[float, float]]) -> bool:
+    lon, lat = point
+    inside = False
+    previous_lon, previous_lat = polygon[-1]
+    for current_lon, current_lat in polygon:
+        intersects = (current_lat > lat) != (previous_lat > lat)
+        if intersects:
+            crossing_lon = (previous_lon - current_lon) * (lat - current_lat) / (
+                previous_lat - current_lat
+            ) + current_lon
+            if lon < crossing_lon:
+                inside = not inside
+        previous_lon, previous_lat = current_lon, current_lat
+    return inside
 
 
 def haversine_meters(a: tuple[float, float], b: tuple[float, float]) -> float:
@@ -247,7 +268,9 @@ def build_features(
             if len(path) < 2:
                 continue
             mid = midpoint(path)
-            if in_excluded_wood(mid):
+            if not in_bbox(mid, PARIS_DATA_BBOX):
+                continue
+            if not in_polygon(mid, PERIPHERIQUE_POLYGON):
                 continue
             length_meters = sum(haversine_meters(a, b) for a, b in zip(path, path[1:]))
             if length_meters < min_length_meters:
@@ -316,7 +339,8 @@ def write_geojson(features: list[dict[str, Any]], output_path: Path) -> None:
             "generated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "scope": "Paris intra-muros street segment mesh",
             "source": "OpenStreetMap via Overpass API",
-            "excluded": ["Bois de Boulogne", "Bois de Vincennes"],
+            "boundary": "Approximate Boulevard Peripherique polygon",
+            "excluded": ["ways outside the Boulevard Peripherique"],
             "notes": [
                 "Segments are generated as individual clickable elements.",
                 "Validation/completion state is intentionally excluded from source data.",
@@ -360,8 +384,9 @@ def write_summary(features: list[dict[str, Any]], output_path: Path) -> None:
             "## Known Limitations",
             "",
             "- Arrondissement assignment uses nearest arrondissement center approximation.",
-            "- Bois exclusions use pragmatic bounding boxes for the first generated mesh.",
-            "- Geometry is split by consecutive OSM way nodes and should be visually inspected in the PWA.",
+            "- Intra-muros filtering uses a pragmatic hand-drawn Boulevard Peripherique polygon.",
+            "- The first street-only mesh excludes footways, paths, steps, and cycleways to avoid sidewalk/internal-path duplication.",
+            "- Geometry is generated from filtered OSM ways and simplified for visual inspection in the PWA.",
         ]
     )
     output_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

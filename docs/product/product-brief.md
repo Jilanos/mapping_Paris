@@ -21,7 +21,7 @@ The primary user is the project owner. The app is personal, local-first, and dis
 - Mark selected segments as completed or not completed.
 - Store completion state locally on the device.
 - Show global completion statistics and statistics by arrondissement.
-- Exclude the Bois de Boulogne and Bois de Vincennes from the V1 dataset.
+- Keep the V1 street dataset inside the Boulevard Peripherique, excluding the Bois de Boulogne and Bois de Vincennes without cutting into valid intra-muros neighborhoods.
 - Include public ways that are reasonably walkable or bikeable.
 
 ## Out of scope for V1

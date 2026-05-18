@@ -8,7 +8,7 @@ Accepted.
 
 The project needs a practical street segment dataset for Paris intra-muros. The V1 goal is personal heritage tracking, not exhaustive GIS precision. The Android app should stay simple and should not perform heavy geospatial processing at runtime.
 
-The dataset must exclude the Bois de Boulogne and Bois de Vincennes. It should focus on ways that represent streets, paths, or cycleable/walkable public passages useful for the personal tracking goal. The exact OpenStreetMap filtering rules can stay pragmatic and may be refined later.
+The dataset must focus on streets inside the Boulevard Peripherique. This excludes the Bois de Boulogne and Bois de Vincennes without broad rectangular cutouts that remove valid neighborhoods such as Auteuil or Bel-Air. The exact OpenStreetMap filtering rules can stay pragmatic and may be refined later.
 
 The current target dataset is a dense generated segment mesh, not a small representative seed. The Chrome PWA tester is the validation surface for inspecting this mesh before Android import.
 

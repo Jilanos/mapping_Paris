@@ -1,0 +1,7 @@
+{
+  "scripts": {
+    "dev": "node tools/dev-server.mjs",
+    "check:pwa": "node --check pwa/app.js && node --check pwa/service-worker.js"
+  },
+  "devDependencies": {}
+}

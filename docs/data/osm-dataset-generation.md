@@ -16,9 +16,10 @@ The future dataset should be generated outside Android from OpenStreetMap.
 
 The first pragmatic rules should:
 
-- keep Paris intra-muros only;
-- exclude the Bois de Boulogne and the Bois de Vincennes;
-- keep normal streets, pedestrian streets, paths, and cycleable ways useful for personal traversal;
+- keep streets inside the Boulevard Peripherique;
+- use the Peripherique boundary instead of broad Bois de Boulogne / Bois de Vincennes exclusion boxes;
+- keep normal streets and pedestrian streets first;
+- exclude sidewalk-like and internal pedestrian geometry in the first inspection pass;
 - exclude clearly private, inaccessible, service-only, or irrelevant ways;
 - split ways into segments between intersections when practical;
 - assign stable ids before Android integration;
@@ -27,7 +28,7 @@ The first pragmatic rules should:
 
 ## Candidate OSM filtering direction
 
-Start with OSM `highway` values that usually describe public street traversal:
+Start with OSM `highway` values that usually describe public street traversal without duplicating sidewalks and internal paths:
 
 - `primary`
 - `secondary`
@@ -36,19 +37,18 @@ Start with OSM `highway` values that usually describe public street traversal:
 - `living_street`
 - `pedestrian`
 - `unclassified`
-- `service` only when it represents a meaningful public passage
-- `cycleway`
-- `path`
-- `footway`
 
 Exclude or review carefully:
 
 - `access=private`
 - `access=no`
+- `footway`, because Paris OSM often maps both sidewalks separately from the street;
+- `path`, because it pulls in many park, station, library, and building-internal paths;
+- `steps`, because it pulls in many micro-segments;
+- `cycleway`, until a later pass decides whether separate bike lanes are useful tracking targets;
 - internal parking aisles;
 - service roads that are not useful for the personal tracking goal;
-- ways outside Paris intra-muros;
-- ways inside the excluded woods.
+- ways outside the Boulevard Peripherique.
 
 ## Repeatability requirement
 
@@ -57,7 +57,7 @@ When the full OSM pipeline is implemented, it should document:
 - input OSM extract source;
 - filtering rules;
 - Paris boundary source;
-- woods exclusion method;
+- Peripherique polygon method;
 - segment splitting logic;
 - id generation logic;
 - export command;

@@ -20,6 +20,13 @@ REQUIRED_PROPERTIES = {
     "source_node_count",
     "highway",
 }
+PARIS_DATA_BBOX = (2.224, 48.815, 2.470, 48.906)
+
+
+def coordinate_in_bbox(coordinate: list[float]) -> bool:
+    lon, lat = coordinate
+    min_lon, min_lat, max_lon, max_lat = PARIS_DATA_BBOX
+    return min_lon <= lon <= max_lon and min_lat <= lat <= max_lat
 
 
 def validate(path: Path) -> tuple[list[str], dict[str, Any]]:
@@ -51,6 +58,10 @@ def validate(path: Path) -> tuple[list[str], dict[str, Any]]:
         coordinates = geometry.get("coordinates", [])
         if len(coordinates) < 2:
             errors.append(f"Feature {index} geometry must contain at least two coordinates")
+        for coordinate in coordinates:
+            if not coordinate_in_bbox(coordinate):
+                errors.append(f"Feature {index} coordinate outside Paris bounds: {coordinate}")
+                break
         if properties.get("length_meters", 0) <= 0:
             errors.append(f"Feature {index} length_meters must be positive")
         arrondissement_counts[str(properties.get("arrondissement", "unknown"))] += 1

@@ -1,41 +1,178 @@
 # mapping_Paris
 
-`mapping_Paris` is a personal Android application project for tracking which street segments have been completed in Paris intra-muros.
+`mapping_Paris` is a local-first personal app for tracking manually completed
+street segments in Paris.
 
-The repository will contain two future parts:
+The project deliberately keeps three things separate:
 
-- an Android app used to display a 2D map of Paris, select street segments, and mark them as completed or not completed;
-- an offline data preparation pipeline used to generate a local street segment dataset from OpenStreetMap before it is bundled into the app.
+- the source street segment dataset generated from OpenStreetMap;
+- the user's completion or validation state;
+- the Android app and local PWA inspection tooling.
 
-The project is local-first, personal-use only, and intended for APK distribution. It does not target Play Store publication, backend services, user accounts, or cloud synchronization.
+There is no backend, no account system, no GPS validation, and no cloud sync in
+the current scope.
 
-## Documentation logic
+## Current State
 
-The repository starts with a lightweight Logics Manager style documentation base:
+The repository now contains:
 
-- `docs/product/` captures product intent, scope, user value, and success criteria.
-- `docs/adr/` records architecture decisions and their consequences.
-- `docs/request/` captures high-level product requests before they are split into delivery work.
-- `docs/backlog/` lists prioritized delivery slices.
-- `docs/tasks/` tracks executable tasks and validation evidence.
+- an Android Kotlin / Jetpack Compose scaffold;
+- a local Room database for future user progress persistence;
+- an osmdroid map integration in the Android app;
+- a generated Paris street segment dataset at
+  `data/generated/paris_segments.geojson`;
+- a local PWA tester in `pwa/` for visual inspection and manual validation;
+- a repeatable OSM generation and validation pipeline in
+  `tools/segment_pipeline/`;
+- a small dependency-free Node dev server exposed through `npm run dev`.
 
-This structure is intentionally small so future Codex tasks can be driven from clear, maintainable documents.
+The generated dataset currently contains `15,295` street segments and about
+`1,430.73 km` of total segment length.
 
-## Current status
+## Segment Dataset
 
-The project has an MVP Android scaffold with:
+The current V1 dataset is generated from OpenStreetMap and keeps streets whose
+midpoint falls inside a pragmatic Boulevard Peripherique polygon.
 
-- a Kotlin/Jetpack Compose app structure;
-- an online OSM map integration through osmdroid;
-- a local GeoJSON seed dataset for Paris segments;
-- manual single-segment selection and completion state;
-- local Room persistence for progress;
-- global and arrondissement statistics.
+Included OSM `highway` values:
 
-The segment work has been corrected with a dense generated Paris mesh and a local Chrome PWA tester:
+- `primary`
+- `secondary`
+- `tertiary`
+- `residential`
+- `unclassified`
+- `living_street`
+- `pedestrian`
 
-- `data/generated/paris_segments.geojson` contains the first generated dense segment dataset;
-- `tools/segment_pipeline/` contains the repeatable generation and validation scripts;
-- `pwa/` contains a local inspection tester for rendering, clicking, validating, and unvalidating segments.
+Excluded in the first inspection pass:
 
-The generated mesh is ready for visual inspection and filter refinement before replacing the Android seed dataset.
+- `footway`
+- `path`
+- `steps`
+- `cycleway`
+- private, inaccessible, service-only, or irrelevant ways
+
+This keeps the map close to the street network instead of tripling most streets
+with separately mapped sidewalks or internal park/building paths. Private alleys
+such as `Square de Port-Royal` and `Impasse de la Santé` are intentionally not
+included while they remain tagged as private service alleys in OSM.
+
+Regenerate the dataset:
+
+```powershell
+py -3 tools\segment_pipeline\generate_paris_segments.py --refresh
+```
+
+Validate the dataset:
+
+```powershell
+py -3 tools\segment_pipeline\validate_segments.py
+```
+
+## PWA Tester
+
+The PWA is the current inspection surface for the generated segment mesh before
+Android import.
+
+Run it locally:
+
+```powershell
+npm run dev
+```
+
+Then open the URL printed by the server, normally:
+
+```text
+http://localhost:5173/pwa/
+```
+
+If port `5173` is already in use, the dev server automatically tries the next
+available port and prints the final URL.
+
+The tester supports:
+
+- Leaflet canvas rendering of the full segment mesh;
+- startup zoom directly on Paris;
+- map bounds constrained around Paris / Ile-de-France;
+- click-to-select one or more segments;
+- validate or unvalidate the selected segment set;
+- localStorage persistence for validation state;
+- export of validated segment ids to JSON.
+
+PWA checks:
+
+```powershell
+npm run check:pwa
+py -3 tools\segment_pipeline\validate_pwa.py
+```
+
+## Android APK Build
+
+The local machine has been prepared with:
+
+- JDK 17 Temurin;
+- Android SDK command line tools;
+- `platform-tools`;
+- `platforms;android-35`;
+- `build-tools;35.0.0`.
+
+The expected environment variables are:
+
+```text
+JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot
+ANDROID_HOME=C:\Users\Pmondou\AppData\Local\Android\Sdk
+ANDROID_SDK_ROOT=C:\Users\Pmondou\AppData\Local\Android\Sdk
+```
+
+Build a debug APK:
+
+```powershell
+.\gradlew.bat assembleDebug
+```
+
+If a reused Gradle daemon hangs, use:
+
+```powershell
+.\gradlew.bat --no-daemon --stacktrace assembleDebug
+```
+
+Expected output:
+
+```text
+app\build\outputs\apk\debug\app-debug.apk
+```
+
+## Validation Commands
+
+Useful project checks:
+
+```powershell
+py -3 tools\segment_pipeline\validate_segments.py
+py -3 tools\segment_pipeline\validate_pwa.py
+npm run check:pwa
+node --check tools\dev-server.mjs
+.\gradlew.bat --no-daemon --stacktrace assembleDebug
+```
+
+## Documentation
+
+Project documentation lives under `docs/`:
+
+- `docs/product/` for product intent and scope;
+- `docs/adr/` for architecture decisions;
+- `docs/request/` for high-level requests;
+- `docs/backlog/` for delivery slices;
+- `docs/tasks/` for executable task tracking;
+- `docs/data/` for dataset contracts and generation notes;
+- `docs/development/` for local build and development notes.
+
+## Non-Goals
+
+The current V1 does not target:
+
+- backend services;
+- user accounts;
+- cloud sync;
+- GPS validation;
+- Play Store publication;
+- perfect GIS topology.

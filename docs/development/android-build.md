@@ -1,35 +1,54 @@
 # Android Build Notes
 
-## Local toolchain
+## Local Toolchain
 
-The MVP build was validated with a local toolchain installed under:
+The current local APK build is validated on Windows with:
 
-- JDK: `C:\Users\paulm\devtools\jdk-17`
-- Gradle: `C:\Users\paulm\devtools\gradle\gradle-8.10.2`
-- Android SDK: `C:\Users\paulm\devtools\android-sdk`
+- JDK: `C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot`
+- Android SDK: `C:\Users\Pmondou\AppData\Local\Android\Sdk`
+- Gradle: repository wrapper `gradlew.bat`
 
 Installed Android SDK packages:
 
-- `platform-tools`
+- `platform-tools` 37.0.0
 - `platforms;android-35`
 - `build-tools;35.0.0`
-- `build-tools;34.0.0`
 
-## Expected build command
+The Android SDK licenses have been accepted locally through `sdkmanager`.
 
-From PowerShell:
+## Environment
+
+The following user environment variables are configured:
+
+```text
+JAVA_HOME=C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot
+ANDROID_HOME=C:\Users\Pmondou\AppData\Local\Android\Sdk
+ANDROID_SDK_ROOT=C:\Users\Pmondou\AppData\Local\Android\Sdk
+```
+
+The user `Path` also includes:
+
+```text
+C:\Program Files\Eclipse Adoptium\jdk-17.0.19.10-hotspot\bin
+C:\Users\Pmondou\AppData\Local\Android\Sdk\cmdline-tools\latest\bin
+C:\Users\Pmondou\AppData\Local\Android\Sdk\platform-tools
+```
+
+Open a new terminal after environment changes so PowerShell reloads the updated
+user variables.
+
+## Build Command
+
+From the repository root:
 
 ```powershell
-$env:JAVA_HOME = "$env:USERPROFILE\devtools\jdk-17"
-$env:ANDROID_HOME = "$env:USERPROFILE\devtools\android-sdk"
-$env:ANDROID_SDK_ROOT = "$env:USERPROFILE\devtools\android-sdk"
 .\gradlew.bat assembleDebug
 ```
 
-For lint:
+If a reused Gradle daemon hangs, run:
 
 ```powershell
-.\gradlew.bat lintDebug
+.\gradlew.bat --no-daemon --stacktrace assembleDebug
 ```
 
 ## Expected APK
@@ -37,12 +56,20 @@ For lint:
 The debug APK should be produced at:
 
 ```text
-app/build/outputs/apk/debug/app-debug.apk
+app\build\outputs\apk\debug\app-debug.apk
 ```
 
-## Last validation
+## Last Validation
 
-- `assembleDebug`: passed.
-- `lintDebug`: passed.
-- APK produced: `app/build/outputs/apk/debug/app-debug.apk`.
-- ADB check: no device was connected at validation time.
+Executed:
+
+```powershell
+.\gradlew.bat --no-daemon --stacktrace assembleDebug
+```
+
+Result:
+
+- build successful;
+- debug APK produced at `app\build\outputs\apk\debug\app-debug.apk`;
+- APK signature verified with `apksigner`;
+- certificate CN: `Android Debug`.

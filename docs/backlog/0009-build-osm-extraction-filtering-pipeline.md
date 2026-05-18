@@ -75,7 +75,7 @@ Urgency: High
 
 The pipeline may be Python or another pragmatic local tooling path, but it must be outside Android.
 
-Implemented in `tools/segment_pipeline/generate_paris_segments.py`. The first extraction uses Overpass, OSM highway filtering, access filtering, and pragmatic bounding-box exclusions for the Bois de Boulogne and Bois de Vincennes.
+Implemented in `tools/segment_pipeline/generate_paris_segments.py`. The extraction uses Overpass, OSM highway filtering, access filtering, and a pragmatic Boulevard Peripherique polygon so valid intra-muros neighborhoods are not cut out by broad Bois exclusion boxes.
 
 ## Task coverage
 

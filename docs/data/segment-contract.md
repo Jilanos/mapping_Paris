@@ -6,7 +6,7 @@ This contract defines the source segment dataset produced by the OpenStreetMap p
 
 The source dataset contains street segment facts only. User progress is stored separately in the Android app and must not be written into this file.
 
-The target dataset is a dense Paris intra-muros mesh. It is not a one-segment-per-arrondissement sample.
+The target dataset is a dense Paris street mesh inside the Boulevard Peripherique. It is not a one-segment-per-arrondissement sample.
 
 ## Format
 
@@ -51,7 +51,7 @@ Arrondissement assignment can be approximate or arbitrary for ambiguous or bound
 
 Geometry can be simplified. The rendered Paris street network must remain understandable at normal map zoom levels, but the line does not need to reproduce the exact shape of every street.
 
-The first generated mesh treats each filtered OSM way as a clickable segment and simplifies its polyline with a documented tolerance. This is a pragmatic first segmentation pass designed for PWA visual inspection.
+The first generated mesh treats each filtered OSM street way as a clickable segment and simplifies its polyline with a documented tolerance. It keeps ways whose midpoint falls inside a pragmatic Boulevard Peripherique polygon, which is simpler than subtracting the two Bois areas manually and preserves neighborhoods such as Auteuil and Bel-Air. It intentionally excludes OSM `footway`, `path`, `steps`, and `cycleway` values in the first inspection pass to avoid duplicated sidewalks and internal park/building paths.
 
 ## Example
 
