@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#f6f8fa" />
+    <meta name="theme-color" content="#082252" />
     <title>mapping Paris - testeur segments</title>
     <link rel="icon" href="data:," />
     <link rel="manifest" href="./manifest.webmanifest" />
@@ -53,6 +53,25 @@
             <button id="clearSelection" type="button" disabled>Désélectionner</button>
           </div>
         </section>
+
+        <details class="panel collapsible-panel">
+          <summary>Statistiques</summary>
+          <dl class="stats stats-compact">
+            <div>
+              <dt>Total parcouru</dt>
+              <dd id="globalValidatedLength">0 m</dd>
+            </div>
+            <div>
+              <dt>Total réseau</dt>
+              <dd id="globalLength">0 m</dd>
+            </div>
+            <div>
+              <dt>Progression</dt>
+              <dd id="globalProgress">0 %</dd>
+            </div>
+          </dl>
+          <div id="arrondissementStats" class="arrondissement-stats"></div>
+        </details>
 
         <section class="panel">
           <h2>Validation</h2>

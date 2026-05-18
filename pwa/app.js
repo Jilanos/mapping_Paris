@@ -1,6 +1,7 @@
 const DATASET_URL = "/data/generated/paris_segments.geojson";
 const VALIDATION_STORAGE_KEY = "mappingParis.segmentValidation.v1";
 const PARIS_BOUNDS = L.latLngBounds([48.815, 2.224], [48.906, 2.47]);
+const STREET_LABEL_MIN_ZOOM = 15;
 
 const elements = {
   totalSegments: document.querySelector("#totalSegments"),
@@ -12,6 +13,10 @@ const elements = {
   clearSelection: document.querySelector("#clearSelection"),
   exportValidation: document.querySelector("#exportValidation"),
   resetValidation: document.querySelector("#resetValidation"),
+  globalValidatedLength: document.querySelector("#globalValidatedLength"),
+  globalLength: document.querySelector("#globalLength"),
+  globalProgress: document.querySelector("#globalProgress"),
+  arrondissementStats: document.querySelector("#arrondissementStats"),
 };
 
 const map = L.map("map", {
@@ -19,15 +24,22 @@ const map = L.map("map", {
   zoomControl: true,
   maxBounds: PARIS_BOUNDS.pad(0.15),
   maxBoundsViscosity: 0.85,
-  minZoom: 11,
-}).setView([48.8566, 2.3522], 12);
+  minZoom: 12,
+}).setView([48.8566, 2.3522], 13);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+map.createPane("streetContext");
+map.createPane("segments");
+map.createPane("streetLabels");
+map.getPane("streetContext").style.zIndex = 410;
+map.getPane("segments").style.zIndex = 430;
+map.getPane("streetLabels").style.zIndex = 460;
+
+L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
   bounds: PARIS_BOUNDS.pad(0.35),
-  minZoom: 11,
+  minZoom: 12,
   maxZoom: 20,
-  keepBuffer: 1,
-  attribution: "&copy; OpenStreetMap contributors",
+  keepBuffer: 2,
+  attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
 }).addTo(map);
 
 const validationState = loadValidationState();
@@ -36,6 +48,8 @@ const featureById = new Map();
 const selectedIds = new Set();
 let dataset = null;
 let meshLayer = null;
+let streetContextLayer = null;
+let streetLabelLayer = null;
 
 bootstrap();
 
@@ -45,13 +59,35 @@ async function bootstrap() {
   const response = await fetch(DATASET_URL);
   dataset = await response.json();
   elements.totalSegments.textContent = dataset.features.length.toLocaleString("fr-FR");
+  renderStreetContext(dataset);
   renderMesh(dataset);
-  updateValidatedCount();
+  renderStreetLabels(dataset);
+  updateValidatedStats();
   renderSelectionDetails();
+}
+
+function renderStreetContext(geojson) {
+  streetContextLayer = L.geoJSON(geojson, {
+    pane: "streetContext",
+    renderer: L.canvas({ padding: 0.45 }),
+    interactive: false,
+    style: (feature) => {
+      const highway = feature.properties.highway;
+      const isMajor = ["primary", "secondary", "tertiary"].includes(highway);
+      return {
+        color: isMajor ? "#8aa2c6" : "#b7c4d7",
+        weight: isMajor ? 5 : 3,
+        opacity: isMajor ? 0.62 : 0.38,
+        lineCap: "round",
+        lineJoin: "round",
+      };
+    },
+  }).addTo(map);
 }
 
 function renderMesh(geojson) {
   meshLayer = L.geoJSON(geojson, {
+    pane: "segments",
     renderer: L.canvas({ padding: 0.35 }),
     style: (feature) => styleFor(feature.properties.id),
     onEachFeature: (feature, layer) => {
@@ -69,14 +105,64 @@ function renderMesh(geojson) {
   }
 }
 
+function renderStreetLabels(geojson) {
+  streetLabelLayer = L.layerGroup([], { pane: "streetLabels" }).addTo(map);
+  const labels = buildStreetLabels(geojson.features);
+  labels.forEach((label) => {
+    L.marker([label.latitude, label.longitude], {
+      pane: "streetLabels",
+      interactive: false,
+      icon: L.divIcon({
+        className: "street-label",
+        html: escapeHtml(label.name),
+        iconSize: null,
+      }),
+    }).addTo(streetLabelLayer);
+  });
+  updateStreetLabelVisibility();
+  map.on("zoomend", updateStreetLabelVisibility);
+}
+
+function buildStreetLabels(features) {
+  const byName = new Map();
+  features.forEach((feature) => {
+    const name = feature.properties.street_name;
+    if (!name || name === "Sans nom") return;
+    const coordinates = feature.geometry.coordinates;
+    if (!Array.isArray(coordinates) || coordinates.length === 0) return;
+    const midpoint = coordinates[Math.floor(coordinates.length / 2)];
+    const current = byName.get(name) || { name, count: 0, longitude: 0, latitude: 0 };
+    current.count += 1;
+    current.longitude += Number(midpoint[0]);
+    current.latitude += Number(midpoint[1]);
+    byName.set(name, current);
+  });
+
+  return [...byName.values()]
+    .map((entry) => ({
+      name: entry.name,
+      longitude: entry.longitude / entry.count,
+      latitude: entry.latitude / entry.count,
+      count: entry.count,
+    }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function updateStreetLabelVisibility() {
+  if (!streetLabelLayer) return;
+  const visible = map.getZoom() >= STREET_LABEL_MIN_ZOOM;
+  const pane = map.getPane("streetLabels");
+  pane.style.display = visible ? "block" : "none";
+}
+
 function styleFor(id) {
   if (selectedIds.has(id)) {
-    return { color: "#1f5fa8", weight: 6, opacity: 0.95 };
+    return { color: "#1df0bf", weight: 6, opacity: 0.98, lineCap: "round", lineJoin: "round" };
   }
   if (validationState[id]) {
-    return { color: "#2f8f5b", weight: 3, opacity: 0.82 };
+    return { color: "#2f8f5b", weight: 3, opacity: 0.86, lineCap: "round", lineJoin: "round" };
   }
-  return { color: "#b9624b", weight: 2, opacity: 0.58 };
+  return { color: "#b95247", weight: 2, opacity: 0.68, lineCap: "round", lineJoin: "round" };
 }
 
 function toggleSegmentSelection(id) {
@@ -124,7 +210,7 @@ function renderSelectionDetails() {
   elements.segmentDetails.classList.remove("empty");
   elements.segmentDetails.innerHTML = `
     <strong>${selectedProperties.length.toLocaleString("fr-FR")} segments sélectionnés</strong>
-    <span>Longueur totale: ${totalLength.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} m</span>
+    <span>Longueur totale: ${formatMeters(totalLength)}</span>
     <span>Rues: ${escapeHtml(formatPreview(streetNames))}</span>
     <span>Arrondissements: ${escapeHtml(formatPreview(arrondissements))}</span>
   `;
@@ -136,7 +222,7 @@ function renderSingleSegmentDetails(properties) {
     <strong>${escapeHtml(properties.street_name)}</strong>
     <span>ID: ${escapeHtml(properties.id)}</span>
     <span>Arrondissement: ${escapeHtml(properties.arrondissement)}</span>
-    <span>Longueur: ${Number(properties.length_meters).toLocaleString("fr-FR")} m</span>
+    <span>Longueur: ${formatMeters(Number(properties.length_meters))}</span>
     <span>Type OSM: ${escapeHtml(properties.highway)}</span>
     <span>Way OSM: ${escapeHtml(String(properties.source_way_id))}</span>
   `;
@@ -168,7 +254,7 @@ elements.toggleValidation.addEventListener("click", () => {
     refreshLayer(id);
   }
   saveValidationState();
-  updateValidatedCount();
+  updateValidatedStats();
   renderSelectionDetails();
 });
 
@@ -201,12 +287,49 @@ elements.resetValidation.addEventListener("click", () => {
   previousIds.forEach((id) => delete validationState[id]);
   saveValidationState();
   previousIds.forEach(refreshLayer);
-  updateValidatedCount();
+  updateValidatedStats();
   renderSelectionDetails();
 });
 
-function updateValidatedCount() {
-  elements.validatedSegments.textContent = Object.keys(validationState).length.toLocaleString("fr-FR");
+function updateValidatedStats() {
+  const features = dataset?.features || [];
+  const global = { total: 0, validated: 0, count: 0 };
+  const byArrondissement = new Map();
+
+  features.forEach((feature) => {
+    const properties = feature.properties;
+    const length = Number(properties.length_meters || 0);
+    const arrondissement = properties.arrondissement || "-";
+    const item = byArrondissement.get(arrondissement) || { total: 0, validated: 0, count: 0 };
+    const isValidated = Boolean(validationState[properties.id]);
+
+    global.total += length;
+    item.total += length;
+    item.count += 1;
+    if (isValidated) {
+      global.validated += length;
+      global.count += 1;
+      item.validated += length;
+    }
+    byArrondissement.set(arrondissement, item);
+  });
+
+  elements.validatedSegments.textContent = global.count.toLocaleString("fr-FR");
+  elements.globalValidatedLength.textContent = formatMeters(global.validated);
+  elements.globalLength.textContent = formatMeters(global.total);
+  elements.globalProgress.textContent = formatPercent(global.validated, global.total);
+  elements.arrondissementStats.innerHTML = [...byArrondissement.entries()]
+    .sort(([left], [right]) => Number(left) - Number(right))
+    .map(([arrondissement, stats]) => {
+      return `
+        <div class="arrondissement-row">
+          <span>${escapeHtml(arrondissement)}</span>
+          <span>${formatMeters(stats.validated)} / ${formatMeters(stats.total)}</span>
+          <span>${formatPercent(stats.validated, stats.total)}</span>
+        </div>
+      `;
+    })
+    .join("");
 }
 
 function loadValidationState() {
@@ -230,6 +353,18 @@ function formatPreview(values) {
     return values.join(", ");
   }
   return `${values.slice(0, 4).join(", ")} +${values.length - 4}`;
+}
+
+function formatMeters(value) {
+  if (value >= 1000) {
+    return `${(value / 1000).toLocaleString("fr-FR", { maximumFractionDigits: 2 })} km`;
+  }
+  return `${value.toLocaleString("fr-FR", { maximumFractionDigits: 0 })} m`;
+}
+
+function formatPercent(validated, total) {
+  if (!total) return "0 %";
+  return `${((validated / total) * 100).toLocaleString("fr-FR", { maximumFractionDigits: 1 })} %`;
 }
 
 function registerServiceWorker() {

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="mapping Paris app icon source">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="43%" r="72%">
+      <stop offset="0" stop-color="#0d356d"/>
+      <stop offset="0.62" stop-color="#092856"/>
+      <stop offset="1" stop-color="#071f48"/>
+    </radialGradient>
+    <filter id="softShadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#031331" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+  <rect x="34" y="34" width="956" height="956" rx="205" fill="url(#bg)"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#softShadow)">
+    <path d="M245 638 286 540 337 468 383 430 444 407 508 357 575 286 704 299 748 341 769 429 821 488 835 611 824 690 778 764 686 833 582 864 495 849 404 818 319 766 263 744 207 719 202 676Z"
+      stroke="#496da6" stroke-width="21" opacity="0.92"/>
+    <path d="M303 695 385 571 506 548 600 596 699 650 803 660" stroke="#496da6" stroke-width="16" opacity="0.7"/>
+    <path d="M329 469 356 565 395 675 330 760" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M475 562 463 692 391 790" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M520 408 520 551 453 624" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M602 594 582 722 575 846" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M705 653 682 742 721 811" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M757 430 748 610 704 653 642 596" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M337 468 487 428" stroke="#496da6" stroke-width="13" opacity="0.65"/>
+    <path d="M585 299 598 389 575 432 676 421 769 406" stroke="#2ff3c5" stroke-width="17"/>
+    <path d="M502 349 552 423" stroke="#2ff3c5" stroke-width="17"/>
+    <path d="M575 432 557 498 636 530 714 559 753 559" stroke="#2ff3c5" stroke-width="17"/>
+    <path d="M746 431 746 558 845 518" stroke="#2ff3c5" stroke-width="17"/>
+    <path d="M630 299 640 372 622 415" stroke="#2ff3c5" stroke-width="17"/>
+  </g>
+</svg>
