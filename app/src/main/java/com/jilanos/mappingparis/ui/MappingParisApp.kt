@@ -19,6 +19,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -37,6 +40,7 @@ import org.osmdroid.views.MapView
 @Composable
 fun MappingParisApp(viewModel: MappingParisViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    var showStats by remember { mutableStateOf(false) }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
@@ -72,10 +76,15 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onToggleCompletion = viewModel::toggleSelectedCompletion,
                         onClearSelection = viewModel::clearSelection
                     )
-                    StatsPanel(
-                        globalStats = uiState.globalStats,
-                        arrondissementStats = uiState.arrondissementStats
-                    )
+                    OutlinedButton(onClick = { showStats = !showStats }) {
+                        Text(if (showStats) "Masquer les statistiques" else "Statistiques")
+                    }
+                    if (showStats) {
+                        StatsPanel(
+                            globalStats = uiState.globalStats,
+                            arrondissementStats = uiState.arrondissementStats
+                        )
+                    }
                 }
             }
         }

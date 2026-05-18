@@ -7,6 +7,7 @@ data class LatLon(
 
 data class StreetSegment(
     val id: String,
+    val logicalSegmentId: String,
     val streetName: String,
     val arrondissement: String,
     val lengthMeters: Double,
@@ -21,8 +22,9 @@ data class CompletionStats(
 )
 
 fun List<StreetSegment>.completionStats(completionStates: Map<String, Boolean>): CompletionStats {
-    val total = sumOf { it.lengthMeters }
-    val completed = filter { completionStates[it.id] == true }.sumOf { it.lengthMeters }
+    val logicalSegments = logicalRepresentatives()
+    val total = logicalSegments.sumOf { it.lengthMeters }
+    val completed = logicalSegments.filter { completionStates[it.logicalSegmentId] == true }.sumOf { it.lengthMeters }
     return CompletionStats(
         completedMeters = completed,
         totalMeters = total,
@@ -33,7 +35,14 @@ fun List<StreetSegment>.completionStats(completionStates: Map<String, Boolean>):
 fun List<StreetSegment>.completionStatsByArrondissement(
     completionStates: Map<String, Boolean>
 ): Map<String, CompletionStats> {
-    return groupBy { it.arrondissement }
+    return logicalRepresentatives()
+        .groupBy { it.arrondissement }
         .toSortedMap()
         .mapValues { (_, segments) -> segments.completionStats(completionStates) }
+}
+
+fun List<StreetSegment>.logicalRepresentatives(): List<StreetSegment> {
+    return groupBy { it.logicalSegmentId }
+        .values
+        .map { group -> group.maxBy { it.lengthMeters } }
 }

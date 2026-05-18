@@ -16,6 +16,11 @@ class SegmentGeoJsonParser {
                 add(
                     StreetSegment(
                         id = properties.getString("id"),
+                        logicalSegmentId = if (properties.has("logical_segment_id")) {
+                            properties.getString("logical_segment_id")
+                        } else {
+                            properties.getString("id")
+                        },
                         streetName = properties.getString("street_name"),
                         arrondissement = properties.getString("arrondissement"),
                         lengthMeters = properties.getDouble("length_meters"),

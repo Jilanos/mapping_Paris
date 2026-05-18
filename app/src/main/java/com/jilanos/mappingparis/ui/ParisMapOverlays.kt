@@ -73,14 +73,14 @@ class SegmentNetworkOverlay(
 
     private fun drawSegments(canvas: Canvas, mapView: MapView, selectedOnly: Boolean) {
         segments.forEach { segment ->
-            val selected = segment.id in selectedSegmentIds
-            if (selected != selectedOnly) return@forEach
+            val logicalSelected = segment.logicalSegmentId in selectedSegmentIds
+            if (logicalSelected != selectedOnly) return@forEach
 
-            val paint = if (selected) {
+            val paint = if (logicalSelected) {
                 selectedPaint
             } else {
                 basePaint.apply {
-                    color = if (completionStates[segment.id] == true) {
+                    color = if (completionStates[segment.logicalSegmentId] == true) {
                         Color.argb(82, 22, 136, 78)
                     } else {
                         Color.argb(66, 217, 75, 66)

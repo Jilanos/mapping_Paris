@@ -1,42 +1,42 @@
 # Generated Segment Dataset Summary
 
-Generated at: 2026-05-18T14:28:08Z
+Generated at: 2026-05-18T14:47:59Z
 
-Total segments: 18154
-Total length: 1355.51 km
+Total segments: 18963
+Total length: 1418.40 km
 
 ## Segments by Arrondissement
 
-- 1: 461
-- 10: 828
-- 11: 774
-- 12: 1218
-- 13: 1207
-- 14: 1151
-- 15: 1387
-- 16: 1489
-- 17: 1230
-- 18: 1230
-- 19: 902
-- 2: 445
-- 20: 1062
-- 3: 515
-- 4: 613
-- 5: 516
-- 6: 669
-- 7: 813
-- 8: 895
-- 9: 749
+- 1: 462
+- 10: 870
+- 11: 795
+- 12: 1333
+- 13: 1265
+- 14: 1218
+- 15: 1442
+- 16: 1576
+- 17: 1313
+- 18: 1283
+- 19: 944
+- 2: 448
+- 20: 1113
+- 3: 525
+- 4: 619
+- 5: 524
+- 6: 704
+- 7: 847
+- 8: 908
+- 9: 774
 
 ## Segments by Highway Type
 
-- living_street: 763
-- pedestrian: 1714
-- primary: 2253
-- residential: 9046
-- secondary: 2095
-- tertiary: 2040
-- unclassified: 243
+- living_street: 770
+- pedestrian: 1728
+- primary: 2726
+- residential: 9138
+- secondary: 2231
+- tertiary: 2123
+- unclassified: 247
 
 ## Known Limitations
 

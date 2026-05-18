@@ -355,34 +355,56 @@ def build_features(
                     },
                 }
             )
-    return remove_parallel_same_street_duplicates(features)
+    return assign_parallel_logical_segment_ids(features)
 
 
-def remove_parallel_same_street_duplicates(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def assign_parallel_logical_segment_ids(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
     grouped: dict[str, list[dict[str, Any]]] = {}
     for feature in features:
         name = feature["properties"].get("street_name", "")
         grouped.setdefault(normalize_street_name(name), []).append(feature)
 
-    result: list[dict[str, Any]] = []
     for name, group in grouped.items():
         if name in {"", "unnamed way"} or len(group) == 1:
-            result.extend(group)
             continue
-        kept: list[dict[str, Any]] = []
-        for feature in sorted(group, key=lambda item: item["properties"]["length_meters"], reverse=True):
-            duplicate_of = next(
-                (candidate for candidate in kept if is_parallel_duplicate(feature, candidate)),
-                None,
-            )
-            if duplicate_of is None:
-                kept.append(feature)
-            else:
-                duplicate_of["properties"]["merged_parallel_source_count"] = (
-                    duplicate_of["properties"].get("merged_parallel_source_count", 1) + 1
-                )
-        result.extend(kept)
-    return result
+        parent = {feature["properties"]["id"]: feature["properties"]["id"] for feature in group}
+
+        def find(segment_id: str) -> str:
+            while parent[segment_id] != segment_id:
+                parent[segment_id] = parent[parent[segment_id]]
+                segment_id = parent[segment_id]
+            return segment_id
+
+        def union(left_id: str, right_id: str) -> None:
+            left_root = find(left_id)
+            right_root = find(right_id)
+            if left_root != right_root:
+                parent[right_root] = left_root
+
+        for left_index, left in enumerate(group):
+            for right in group[left_index + 1 :]:
+                if is_parallel_duplicate(left, right):
+                    union(left["properties"]["id"], right["properties"]["id"])
+
+        components: dict[str, list[dict[str, Any]]] = {}
+        for feature in group:
+            components.setdefault(find(feature["properties"]["id"]), []).append(feature)
+
+        for component in components.values():
+            if len(component) == 1:
+                component[0]["properties"]["logical_segment_id"] = component[0]["properties"]["id"]
+                continue
+            source_ids = sorted(feature["properties"]["id"] for feature in component)
+            payload = f"{name}|{'|'.join(source_ids)}"
+            digest = hashlib.sha1(payload.encode("utf-8")).hexdigest()[:12]
+            logical_id = f"paris-logical-{digest}"
+            for feature in component:
+                feature["properties"]["logical_segment_id"] = logical_id
+                feature["properties"]["merged_parallel_source_count"] = len(component)
+
+    for feature in features:
+        feature["properties"].setdefault("logical_segment_id", feature["properties"]["id"])
+    return features
 
 
 def is_parallel_duplicate(left: dict[str, Any], right: dict[str, Any]) -> bool:

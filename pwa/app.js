@@ -39,6 +39,7 @@ L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
 const validationState = loadValidationState();
 const layerById = new Map();
 const featureById = new Map();
+const visualIdsByLogicalId = new Map();
 const selectedIds = new Set();
 let dataset = null;
 let meshLayer = null;
@@ -63,8 +64,12 @@ function renderMesh(geojson) {
     style: (feature) => styleFor(feature.properties.id),
     onEachFeature: (feature, layer) => {
       const id = feature.properties.id;
+      const logicalId = logicalIdFor(feature.properties);
       layerById.set(id, layer);
       featureById.set(id, feature);
+      const group = visualIdsByLogicalId.get(logicalId) || [];
+      group.push(id);
+      visualIdsByLogicalId.set(logicalId, group);
       layer.on("click", () => toggleSegmentSelection(id));
     },
   }).addTo(map);
@@ -77,28 +82,31 @@ function renderMesh(geojson) {
 }
 
 function styleFor(id) {
-  if (selectedIds.has(id)) {
+  const properties = featureById.get(id)?.properties;
+  const logicalId = logicalIdFor(properties);
+  if (selectedIds.has(logicalId)) {
     return { color: "#13dcb3", weight: 11, opacity: 0.76, lineCap: "butt", lineJoin: "round" };
   }
-  if (validationState[id]) {
+  if (validationState[logicalId]) {
     return { color: "#16884e", weight: 9, opacity: 0.32, lineCap: "butt", lineJoin: "round" };
   }
   return { color: "#d94b42", weight: 9, opacity: 0.26, lineCap: "butt", lineJoin: "round" };
 }
 
 function toggleSegmentSelection(id) {
-  if (selectedIds.has(id)) {
-    selectedIds.delete(id);
+  const logicalId = logicalIdFor(featureById.get(id)?.properties);
+  if (selectedIds.has(logicalId)) {
+    selectedIds.delete(logicalId);
   } else {
-    selectedIds.add(id);
+    selectedIds.add(logicalId);
   }
-  refreshLayer(id);
+  refreshLogicalLayer(logicalId);
   renderSelectionDetails();
 }
 
 function renderSelectionDetails() {
   const selectedProperties = [...selectedIds]
-    .map((id) => featureById.get(id)?.properties)
+    .map((logicalId) => representativeFeatureForLogicalId(logicalId)?.properties)
     .filter(Boolean);
 
   elements.selectedSegments.textContent = selectedProperties.length.toLocaleString("fr-FR");
@@ -112,7 +120,7 @@ function renderSelectionDetails() {
     return;
   }
 
-  const allSelectedValidated = selectedProperties.every((properties) => validationState[properties.id]);
+  const allSelectedValidated = selectedProperties.every((properties) => validationState[logicalIdFor(properties)]);
   elements.toggleValidation.textContent = allSelectedValidated ? "Dévalider" : "Valider";
 
   if (selectedProperties.length === 1) {
@@ -163,6 +171,11 @@ function refreshLayer(id) {
   }
 }
 
+function refreshLogicalLayer(logicalId) {
+  const visualIds = visualIdsByLogicalId.get(logicalId) || [logicalId];
+  visualIds.forEach(refreshLayer);
+}
+
 elements.toggleValidation.addEventListener("click", () => {
   if (selectedIds.size === 0) return;
   const allSelectedValidated = [...selectedIds].every((id) => validationState[id]);
@@ -172,17 +185,19 @@ elements.toggleValidation.addEventListener("click", () => {
     } else {
       validationState[id] = true;
     }
-    refreshLayer(id);
+    refreshLogicalLayer(id);
   }
   saveValidationState();
   updateValidatedStats();
+  selectedIds.clear();
+  [...visualIdsByLogicalId.keys()].forEach(refreshLogicalLayer);
   renderSelectionDetails();
 });
 
 elements.clearSelection.addEventListener("click", () => {
   const previousIds = [...selectedIds];
   selectedIds.clear();
-  previousIds.forEach(refreshLayer);
+  previousIds.forEach(refreshLogicalLayer);
   renderSelectionDetails();
 });
 
@@ -207,7 +222,7 @@ elements.resetValidation.addEventListener("click", () => {
   const previousIds = Object.keys(validationState);
   previousIds.forEach((id) => delete validationState[id]);
   saveValidationState();
-  previousIds.forEach(refreshLayer);
+  previousIds.forEach(refreshLogicalLayer);
   updateValidatedStats();
   renderSelectionDetails();
 });
@@ -221,8 +236,12 @@ function updateValidatedStats() {
     const properties = feature.properties;
     const length = Number(properties.length_meters || 0);
     const arrondissement = properties.arrondissement || "-";
+    const logicalId = logicalIdFor(properties);
+    if (feature.properties.id !== representativeFeatureForLogicalId(logicalId)?.properties.id) {
+      return;
+    }
     const item = byArrondissement.get(arrondissement) || { total: 0, validated: 0, count: 0 };
-    const isValidated = Boolean(validationState[properties.id]);
+    const isValidated = Boolean(validationState[logicalId]);
 
     global.total += length;
     item.total += length;
@@ -251,6 +270,19 @@ function updateValidatedStats() {
       `;
     })
     .join("");
+}
+
+function logicalIdFor(properties) {
+  if (!properties) return "";
+  return properties.logical_segment_id || properties.id;
+}
+
+function representativeFeatureForLogicalId(logicalId) {
+  const visualIds = visualIdsByLogicalId.get(logicalId) || [logicalId];
+  return visualIds
+    .map((id) => featureById.get(id))
+    .filter(Boolean)
+    .sort((left, right) => Number(right.properties.length_meters || 0) - Number(left.properties.length_meters || 0))[0];
 }
 
 function loadValidationState() {

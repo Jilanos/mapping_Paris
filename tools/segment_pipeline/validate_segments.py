@@ -19,6 +19,7 @@ REQUIRED_PROPERTIES = {
     "source_way_index",
     "source_node_count",
     "highway",
+    "logical_segment_id",
 }
 PARIS_DATA_BBOX = (2.224, 48.815, 2.470, 48.906)
 

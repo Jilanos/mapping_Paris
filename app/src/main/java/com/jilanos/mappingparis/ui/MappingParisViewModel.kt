@@ -8,6 +8,7 @@ import com.jilanos.mappingparis.data.SegmentRepository
 import com.jilanos.mappingparis.data.StreetSegment
 import com.jilanos.mappingparis.data.completionStats
 import com.jilanos.mappingparis.data.completionStatsByArrondissement
+import com.jilanos.mappingparis.data.logicalRepresentatives
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -21,14 +22,16 @@ data class MappingParisUiState(
     val completionStates: Map<String, Boolean> = emptyMap(),
     val selectedSegmentIds: Set<String> = emptySet()
 ) {
-    val selectedSegmentId: String?
+    val selectedLogicalSegmentId: String?
         get() = selectedSegmentIds.firstOrNull()
 
     val selectedSegment: StreetSegment?
-        get() = segments.firstOrNull { it.id == selectedSegmentId }
+        get() = segments.firstOrNull { it.logicalSegmentId == selectedLogicalSegmentId }
 
     val selectedSegments: List<StreetSegment>
-        get() = segments.filter { it.id in selectedSegmentIds }
+        get() = segments
+            .filter { it.logicalSegmentId in selectedSegmentIds }
+            .logicalRepresentatives()
 
     val selectedLengthMeters: Double
         get() = selectedSegments.sumOf { it.lengthMeters }
@@ -73,17 +76,19 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         )
 
     fun selectSegment(segmentId: String) {
+        val logicalSegmentId = logicalIdFor(segmentId)
         selectedSegmentIds.update { current ->
-            if (segmentId in current) {
-                current - segmentId
+            if (logicalSegmentId in current) {
+                current - logicalSegmentId
             } else {
-                current + segmentId
+                current + logicalSegmentId
             }
         }
     }
 
     fun addSegmentToSelection(segmentId: String) {
-        selectedSegmentIds.update { current -> current + segmentId }
+        val logicalSegmentId = logicalIdFor(segmentId)
+        selectedSegmentIds.update { current -> current + logicalSegmentId }
     }
 
     fun clearSelection() {
@@ -96,13 +101,19 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completed = !uiState.value.allSelectedCompleted
         viewModelScope.launch {
             repository.setCompleted(segmentIds = ids, completed = completed)
+            clearSelection()
         }
     }
 
     fun toggleSingleCompletion(segmentId: String) {
-        val current = uiState.value.completionStates[segmentId] == true
+        val logicalSegmentId = logicalIdFor(segmentId)
+        val current = uiState.value.completionStates[logicalSegmentId] == true
         viewModelScope.launch {
-            repository.setCompleted(segmentId = segmentId, completed = !current)
+            repository.setCompleted(segmentId = logicalSegmentId, completed = !current)
         }
+    }
+
+    private fun logicalIdFor(segmentId: String): String {
+        return segments.value.firstOrNull { it.id == segmentId }?.logicalSegmentId ?: segmentId
     }
 }
