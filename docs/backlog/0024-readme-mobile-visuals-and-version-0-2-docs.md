@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 94%
 
 Confidence: 90%
 
-Progress: 0%
+Progress: 90%
 
 Complexity: Medium
 
@@ -82,6 +82,10 @@ Urgency: Medium
 
 This item should happen after or alongside the Android UI work so screenshots
 match the real app.
+
+Implementation note: README visuals were committed under `docs/assets/readme/`.
+No AVD is installed on this machine, so the visuals are reproducible local PNGs
+rather than true emulator screenshots.
 
 ## Task Coverage
 

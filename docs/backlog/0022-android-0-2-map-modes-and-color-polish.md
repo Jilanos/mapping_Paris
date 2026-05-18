@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 94%
 
 Confidence: 88%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: Medium
 
@@ -81,6 +81,9 @@ Urgency: High
 ## Notes
 
 The visual target is practical mobile readability, not a full branding redesign.
+
+Implementation note: delivered in task
+`docs/tasks/0005-deliver-android-0-2-mobile-ux-and-product-hardening.md`.
 
 ## Task Coverage
 

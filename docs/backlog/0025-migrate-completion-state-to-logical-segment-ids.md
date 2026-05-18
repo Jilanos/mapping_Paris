@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 92%
 
 Confidence: 84%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: Medium
 
@@ -76,6 +76,9 @@ Urgency: Medium
 
 This item matters before real long-term use. If the current device data remains
 disposable, it can follow the first 0.2 UX wave.
+
+Implementation note: delivered in task
+`docs/tasks/0005-deliver-android-0-2-mobile-ux-and-product-hardening.md`.
 
 ## Task Coverage
 

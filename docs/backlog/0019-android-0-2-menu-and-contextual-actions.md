@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 94%
 
 Confidence: 90%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: High
 
@@ -87,6 +87,9 @@ Urgency: High
 This item is the main structural UX change for 0.2. Other 0.2 features should
 fit into this interaction model rather than reintroducing permanent panels over
 the map.
+
+Implementation note: delivered in task
+`docs/tasks/0005-deliver-android-0-2-mobile-ux-and-product-hardening.md`.
 
 ## Task Coverage
 

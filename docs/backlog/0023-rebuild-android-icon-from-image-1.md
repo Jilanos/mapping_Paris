@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 94%
 
 Confidence: 90%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: Medium
 
@@ -79,6 +79,9 @@ Urgency: High
 
 The source image is part of the product direction and should not be treated as a
 temporary chat attachment.
+
+Implementation note: delivered in task
+`docs/tasks/0005-deliver-android-0-2-mobile-ux-and-product-hardening.md`.
 
 ## Task Coverage
 

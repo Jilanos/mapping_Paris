@@ -1,30 +1,50 @@
 package com.jilanos.mappingparis.ui
 
+import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -33,58 +53,567 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
 import java.util.Locale
+import kotlinx.coroutines.launch
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
 
+private enum class OverlayPanel {
+    NONE,
+    MENU,
+    SEARCH,
+    FILTER,
+    SETTINGS,
+    STATS
+}
+
 @Composable
 fun MappingParisApp(viewModel: MappingParisViewModel) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    var showStats by remember { mutableStateOf(false) }
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+    var activePanel by remember { mutableStateOf(OverlayPanel.NONE) }
+    var pendingImportJson by remember { mutableStateOf<String?>(null) }
+    var pendingExportJson by remember { mutableStateOf<String?>(null) }
+    var showResetConfirmation by remember { mutableStateOf(false) }
+
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        val exportJson = pendingExportJson
+        pendingExportJson = null
+        if (uri != null && exportJson != null) {
+            context.contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { writer ->
+                writer.write(exportJson)
+            }
+            scope.launch {
+                snackbarHostState.showSnackbar("Export termine")
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            pendingImportJson = context.contentResolver.openInputStream(uri)
+                ?.bufferedReader()
+                ?.use { it.readText() }
+        }
+    }
 
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize()) {
                 SegmentMap(
-                    segments = uiState.segments,
+                    segments = uiState.visibleSegments,
                     completionStates = uiState.completionStates,
                     selectedSegmentIds = uiState.selectedSegmentIds,
+                    mapMode = uiState.mapMode,
+                    mapFocus = uiState.mapFocus,
                     onSelectSegment = viewModel::selectSegment,
                     onLongPressSegment = viewModel::addSegmentToSelection,
                     modifier = Modifier.fillMaxSize()
                 )
 
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .background(
-                            Brush.verticalGradient(
-                                0f to androidx.compose.ui.graphics.Color.Transparent,
-                                0.18f to androidx.compose.ui.graphics.Color.White.copy(alpha = 0.94f),
-                                1f to androidx.compose.ui.graphics.Color.White
-                            )
-                        )
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    SelectedSegmentPanel(
+                MapTopControls(
+                    activePanel = activePanel,
+                    filterActive = uiState.filter.isActive,
+                    onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
+                    onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
+                    onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
+                    modifier = Modifier.align(Alignment.TopStart)
+                )
+
+                when (activePanel) {
+                    OverlayPanel.MENU -> MainMenu(
+                        mapMode = uiState.mapMode,
+                        onMapModeChange = viewModel::setMapMode,
+                        onSettings = { activePanel = OverlayPanel.SETTINGS },
+                        onStats = { activePanel = OverlayPanel.STATS },
+                        onClose = { activePanel = OverlayPanel.NONE },
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(start = 16.dp, top = 72.dp, end = 16.dp)
+                    )
+
+                    OverlayPanel.SEARCH -> SearchPanel(
+                        query = uiState.searchQuery,
+                        results = uiState.searchResults,
+                        onQueryChange = viewModel::updateSearchQuery,
+                        onResult = { result ->
+                            viewModel.focusSearchResult(result)
+                            activePanel = OverlayPanel.NONE
+                        },
+                        onClose = { activePanel = OverlayPanel.NONE },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(start = 16.dp, top = 72.dp, end = 16.dp)
+                    )
+
+                    OverlayPanel.FILTER -> FilterPanel(
+                        filter = uiState.filter,
+                        arrondissements = uiState.availableArrondissements,
+                        onFilterChange = viewModel::updateFilter,
+                        onClear = viewModel::clearFilter,
+                        onClose = { activePanel = OverlayPanel.NONE },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(start = 16.dp, top = 72.dp, end = 16.dp)
+                    )
+
+                    OverlayPanel.SETTINGS -> SettingsView(
+                        onClose = { activePanel = OverlayPanel.MENU },
+                        onExport = {
+                            pendingExportJson = viewModel.buildExportJson()
+                            exportLauncher.launch("mapping-paris-completion-0.2.0.json")
+                        },
+                        onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
+                        onReset = { showResetConfirmation = true }
+                    )
+
+                    OverlayPanel.STATS -> StatsView(
+                        globalStats = uiState.globalStats,
+                        arrondissementStats = uiState.arrondissementStats,
+                        onClose = { activePanel = OverlayPanel.MENU }
+                    )
+
+                    OverlayPanel.NONE -> Unit
+                }
+
+                if (uiState.selectedSegmentIds.isNotEmpty()) {
+                    SelectionActionBar(
                         selectedSegments = uiState.selectedSegments,
                         selectedLengthMeters = uiState.selectedLengthMeters,
                         selectedArrondissementLabel = uiState.selectedArrondissementLabel,
                         allSelectedCompleted = uiState.allSelectedCompleted,
-                        onToggleCompletion = viewModel::toggleSelectedCompletion,
-                        onClearSelection = viewModel::clearSelection
+                        onToggleCompletion = {
+                            val previousStates = uiState.selectedSegmentIds.associateWith {
+                                uiState.completionStates[it] == true
+                            }
+                            val targetCompleted = !uiState.allSelectedCompleted
+                            viewModel.setSelectedCompletion(targetCompleted)
+                            scope.launch {
+                                val result = snackbarHostState.showSnackbar(
+                                    message = if (targetCompleted) "Segments marques parcourus" else "Segments marques non parcourus",
+                                    actionLabel = "Annuler"
+                                )
+                                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                    viewModel.restoreCompletionStates(previousStates)
+                                }
+                            }
+                        },
+                        onClearSelection = viewModel::clearSelection,
+                        modifier = Modifier.align(Alignment.BottomCenter)
                     )
-                    OutlinedButton(onClick = { showStats = !showStats }) {
-                        Text(if (showStats) "Masquer les statistiques" else "Statistiques")
+                }
+
+                SnackbarHost(
+                    hostState = snackbarHostState,
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                )
+            }
+        }
+    }
+
+    pendingImportJson?.let { importJson ->
+        AlertDialog(
+            onDismissRequest = { pendingImportJson = null },
+            title = { Text("Importer la progression") },
+            text = { Text("Choisir comment appliquer ce fichier a la progression locale.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingImportJson = null
+                        viewModel.importCompletionJson(importJson, replace = false) { result ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar("${result.importedCount} segments importes")
+                            }
+                        }
                     }
-                    if (showStats) {
-                        StatsPanel(
-                            globalStats = uiState.globalStats,
-                            arrondissementStats = uiState.arrondissementStats
-                        )
+                ) {
+                    Text("Merge")
+                }
+            },
+            dismissButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        pendingImportJson = null
+                        viewModel.importCompletionJson(importJson, replace = true) { result ->
+                            scope.launch {
+                                snackbarHostState.showSnackbar("${result.importedCount} segments remplaces")
+                            }
+                        }
+                    }) {
+                        Text("Replace")
                     }
+                    TextButton(onClick = { pendingImportJson = null }) {
+                        Text("Cancel")
+                    }
+                }
+            }
+        )
+    }
+
+    if (showResetConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmation = false },
+            title = { Text("Reinitialiser la progression") },
+            text = { Text("Cette action efface toute la progression locale de cet appareil.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showResetConfirmation = false
+                    viewModel.resetProgress()
+                    scope.launch { snackbarHostState.showSnackbar("Progression reinitialisee") }
+                }) {
+                    Text("Reinitialiser")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmation = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun MapTopControls(
+    activePanel: OverlayPanel,
+    filterActive: Boolean,
+    onMenu: () -> Unit,
+    onSearch: () -> Unit,
+    onFilter: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        MapControlButton(
+            label = "Menu",
+            active = activePanel == OverlayPanel.MENU,
+            onClick = onMenu
+        )
+        MapControlButton(
+            label = "Search",
+            active = activePanel == OverlayPanel.SEARCH,
+            onClick = onSearch
+        )
+        MapControlButton(
+            label = "Filter",
+            active = activePanel == OverlayPanel.FILTER || filterActive,
+            onClick = onFilter
+        )
+    }
+}
+
+@Composable
+private fun MapControlButton(label: String, active: Boolean, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        colors = ButtonDefaults.buttonColors(
+            containerColor = if (active) Color(0xFF082252) else Color.White,
+            contentColor = if (active) Color.White else Color(0xFF17324D)
+        ),
+        modifier = Modifier.height(44.dp)
+    ) {
+        Text(label)
+    }
+}
+
+@Composable
+private fun MainMenu(
+    mapMode: MapMode,
+    onMapModeChange: (MapMode) -> Unit,
+    onSettings: () -> Unit,
+    onStats: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Menu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onClose) { Text("Fermer") }
+            }
+            Text("Mode carte", style = MaterialTheme.typography.labelLarge)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = mapMode == MapMode.LIGHT, onClick = { onMapModeChange(MapMode.LIGHT) })
+                Text("Light")
+                Spacer(Modifier.width(18.dp))
+                RadioButton(selected = mapMode == MapMode.BLUE, onClick = { onMapModeChange(MapMode.BLUE) })
+                Text("Blue")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onSettings) { Text("Parametres") }
+                OutlinedButton(onClick = onStats) { Text("Statistiques") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchPanel(
+    query: String,
+    results: List<StreetSearchResult>,
+    onQueryChange: (String) -> Unit,
+    onResult: (StreetSearchResult) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Recherche rue", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onClose) { Text("Fermer") }
+            }
+            OutlinedTextField(
+                value = query,
+                onValueChange = onQueryChange,
+                modifier = Modifier.fillMaxWidth(),
+                singleLine = true,
+                label = { Text("Nom de rue") }
+            )
+            Column(
+                modifier = Modifier.heightIn(max = 280.dp).verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                results.forEach { result ->
+                    OutlinedButton(
+                        onClick = { onResult(result) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.fillMaxWidth()) {
+                            Text(result.streetName, fontWeight = FontWeight.SemiBold)
+                            Text(
+                                "${result.segmentCount} segments - ${result.arrondissementLabel}",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterPanel(
+    filter: SegmentFilter,
+    arrondissements: List<String>,
+    onFilterChange: (SegmentFilter) -> Unit,
+    onClear: () -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(modifier = modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Filtres", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                TextButton(onClick = onClose) { Text("Fermer") }
+            }
+            FilterCheckbox(
+                checked = filter.showCompleted,
+                label = "Parcourus",
+                onCheckedChange = { onFilterChange(filter.copy(showCompleted = it)) }
+            )
+            FilterCheckbox(
+                checked = filter.showNotCompleted,
+                label = "Non parcourus",
+                onCheckedChange = { onFilterChange(filter.copy(showNotCompleted = it)) }
+            )
+            FilterCheckbox(
+                checked = filter.showSelected,
+                label = "Selection",
+                onCheckedChange = { onFilterChange(filter.copy(showSelected = it)) }
+            )
+            OutlinedTextField(
+                value = filter.arrondissement,
+                onValueChange = { onFilterChange(filter.copy(arrondissement = it.filter(Char::isDigit).take(2))) },
+                singleLine = true,
+                label = { Text("Arrondissement") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            OutlinedTextField(
+                value = filter.streetQuery,
+                onValueChange = { onFilterChange(filter.copy(streetQuery = it)) },
+                singleLine = true,
+                label = { Text("Rue") },
+                modifier = Modifier.fillMaxWidth()
+            )
+            if (arrondissements.isNotEmpty()) {
+                Text(
+                    "Arrondissements: ${arrondissements.joinToString(", ")}",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onClear) { Text("Effacer") }
+                Button(onClick = onClose) { Text("Appliquer") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterCheckbox(
+    checked: Boolean,
+    label: String,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(label)
+    }
+}
+
+@Composable
+private fun SettingsView(
+    onClose: () -> Unit,
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    onReset: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color.White
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            HeaderRow(title = "Parametres", onClose = onClose)
+            Text("Progression locale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Button(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Exporter la progression") }
+            OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer la progression") }
+            OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Reinitialiser la progression") }
+        }
+    }
+}
+
+@Composable
+private fun StatsView(
+    globalStats: CompletionStats,
+    arrondissementStats: Map<String, CompletionStats>,
+    onClose: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxSize(),
+        color = Color.White
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(20.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            HeaderRow(title = "Statistiques", onClose = onClose)
+            Text(
+                "Global: ${formatMeters(globalStats.completedMeters)} / ${formatMeters(globalStats.totalMeters)} (${formatPercent(globalStats.percent)})",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "Restant: ${formatMeters((globalStats.totalMeters - globalStats.completedMeters).coerceAtLeast(0.0))}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                arrondissementStats.forEach { (arrondissement, stats) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(arrondissement)
+                        Text("${formatMeters(stats.completedMeters)} / ${formatMeters(stats.totalMeters)}")
+                        Text(formatPercent(stats.percent))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderRow(title: String, onClose: () -> Unit) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+        TextButton(onClick = onClose) { Text("Retour") }
+    }
+}
+
+@Composable
+private fun SelectionActionBar(
+    selectedSegments: List<StreetSegment>,
+    selectedLengthMeters: Double,
+    selectedArrondissementLabel: String,
+    allSelectedCompleted: Boolean,
+    onToggleCompletion: () -> Unit,
+    onClearSelection: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val selectedCount = selectedSegments.size
+    val segmentNames = selectedSegments
+        .map { it.streetName }
+        .distinct()
+        .take(2)
+        .joinToString(", ")
+    Surface(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(12.dp)
+            .clip(RoundedCornerShape(14.dp)),
+        color = Color.White.copy(alpha = 0.96f),
+        tonalElevation = 4.dp,
+        shadowElevation = 4.dp
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                "$selectedCount segment${if (selectedCount > 1) "s" else ""} - ${formatMeters(selectedLengthMeters)}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                "$selectedArrondissementLabel${if (segmentNames.isNotBlank()) " - $segmentNames" else ""}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onToggleCompletion) {
+                    Text(if (allSelectedCompleted) "Non parcouru" else "Parcouru")
+                }
+                OutlinedButton(onClick = onClearSelection) {
+                    Text("Deselectionner")
                 }
             }
         }
@@ -96,6 +625,8 @@ private fun SegmentMap(
     segments: List<StreetSegment>,
     completionStates: Map<String, Boolean>,
     selectedSegmentIds: Set<String>,
+    mapMode: MapMode,
+    mapFocus: MapFocus?,
     onSelectSegment: (String) -> Unit,
     onLongPressSegment: (String) -> Unit,
     modifier: Modifier = Modifier
@@ -110,39 +641,57 @@ private fun SegmentMap(
                 setUseDataConnection(true)
                 controller.setZoom(13.2)
                 controller.setCenter(GeoPoint(48.8566, 2.3522))
+                val basemapOverlay = ParisBasemapOverlay()
                 val segmentOverlay = SegmentNetworkOverlay(
                     segments = segments,
                     completionStates = completionStates,
                     selectedSegmentIds = selectedSegmentIds,
+                    mapMode = mapMode,
                     onTapSegment = onSelectSegment,
                     onLongPressSegment = onLongPressSegment
                 )
                 overlays.add(segmentOverlay)
-                tag = SegmentMapOverlayHolder(segmentOverlay)
+                tag = SegmentMapOverlayHolder(segmentOverlay, basemapOverlay)
             }
         },
         update = { mapView ->
             val holder = mapView.tag as? SegmentMapOverlayHolder ?: return@AndroidView
+            if (mapMode == MapMode.BLUE && !mapView.overlays.contains(holder.basemapOverlay)) {
+                mapView.overlays.add(0, holder.basemapOverlay)
+                mapView.setUseDataConnection(false)
+            }
+            if (mapMode == MapMode.LIGHT && mapView.overlays.contains(holder.basemapOverlay)) {
+                mapView.overlays.remove(holder.basemapOverlay)
+                mapView.setUseDataConnection(true)
+            }
             holder.segmentOverlay.update(
                 segments = segments,
                 completionStates = completionStates,
                 selectedSegmentIds = selectedSegmentIds,
+                mapMode = mapMode,
                 onTapSegment = onSelectSegment,
                 onLongPressSegment = onLongPressSegment
             )
+            if (mapFocus != null && holder.lastFocusKey != mapFocus.key) {
+                holder.lastFocusKey = mapFocus.key
+                mapView.controller.setZoom(mapFocus.zoom)
+                mapView.controller.animateTo(GeoPoint(mapFocus.latitude, mapFocus.longitude))
+            }
             mapView.invalidate()
         }
     )
 
     DisposableEffect(Unit) {
         onDispose {
-            // MapView lifecycle is owned by AndroidView; no extra teardown required for this MVP.
+            // MapView lifecycle is owned by AndroidView for this local-first app.
         }
     }
 }
 
 private data class SegmentMapOverlayHolder(
-    val segmentOverlay: SegmentNetworkOverlay
+    val segmentOverlay: SegmentNetworkOverlay,
+    val basemapOverlay: ParisBasemapOverlay,
+    var lastFocusKey: Int? = null
 )
 
 private val CartoLightTileSource = XYTileSource(
@@ -157,80 +706,6 @@ private val CartoLightTileSource = XYTileSource(
         "https://c.basemaps.cartocdn.com/light_all/"
     )
 )
-
-@Composable
-private fun SelectedSegmentPanel(
-    selectedSegments: List<StreetSegment>,
-    selectedLengthMeters: Double,
-    selectedArrondissementLabel: String,
-    allSelectedCompleted: Boolean,
-    onToggleCompletion: () -> Unit,
-    onClearSelection: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        val selectedCount = selectedSegments.size
-        Text(
-            text = if (selectedCount == 0) {
-                "Aucun segment selectionne"
-            } else {
-                "$selectedCount segment${if (selectedCount > 1) "s" else ""} selectionne${if (selectedCount > 1) "s" else ""}"
-            },
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-        if (selectedCount > 0) {
-            val segmentNames = selectedSegments
-                .map { it.streetName }
-                .distinct()
-                .take(3)
-                .joinToString(", ")
-            Text(
-                text = "$selectedArrondissementLabel - ${formatMeters(selectedLengthMeters)} - $segmentNames",
-                style = MaterialTheme.typography.bodyMedium
-            )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onToggleCompletion) {
-                    Text(if (allSelectedCompleted) "Marquer non parcouru" else "Marquer parcouru")
-                }
-                OutlinedButton(onClick = onClearSelection) {
-                    Text("Deselectionner")
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StatsPanel(
-    globalStats: CompletionStats,
-    arrondissementStats: Map<String, CompletionStats>
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 230.dp)
-            .verticalScroll(rememberScrollState()),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
-    ) {
-        Text(
-            text = "Progression globale: ${formatMeters(globalStats.completedMeters)} / ${formatMeters(globalStats.totalMeters)} (${formatPercent(globalStats.percent)})",
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = FontWeight.Medium
-        )
-        arrondissementStats.forEach { (arrondissement, stats) ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(text = arrondissement, style = MaterialTheme.typography.bodySmall)
-                Text(
-                    text = "${formatMeters(stats.completedMeters)} / ${formatMeters(stats.totalMeters)} (${formatPercent(stats.percent)})",
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-        }
-    }
-}
 
 private fun formatMeters(value: Double): String {
     return if (value >= 1000.0) {

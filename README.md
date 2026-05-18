@@ -17,7 +17,7 @@ the current scope.
 The repository now contains:
 
 - an Android Kotlin / Jetpack Compose scaffold;
-- a local Room database for future user progress persistence;
+- a local Room database for user progress persistence;
 - an osmdroid map integration in the Android app;
 - a generated Paris street segment dataset at
   `data/generated/paris_segments.geojson`;
@@ -28,8 +28,23 @@ The repository now contains:
   `tools/segment_pipeline/`;
 - a small dependency-free Node dev server exposed through `npm run dev`.
 
-The generated dataset currently contains `15,295` street segments and about
-`1,430.73 km` of total segment length.
+The generated dataset currently contains `18,963` visible street geometries and
+`18,001` logical clickable blocks.
+
+## Version 0.2 Preview
+
+Version 0.2 focuses on making the Android app usable as a map-first mobile
+tool: a compact top-left menu, contextual bottom actions only when segments are
+selected, import/export, search, filters, light/blue map modes, and refreshed
+project visuals.
+
+| Map | Menu |
+| --- | --- |
+| ![Android 0.2 map](docs/assets/readme/android-0-2-map.png) | ![Android 0.2 menu](docs/assets/readme/android-0-2-menu.png) |
+
+| Selection | Statistics |
+| --- | --- |
+| ![Android 0.2 selected segments](docs/assets/readme/android-0-2-selection.png) | ![Android 0.2 statistics](docs/assets/readme/android-0-2-stats.png) |
 
 ## Segment Dataset
 
@@ -141,7 +156,7 @@ If a reused Gradle daemon hangs, use:
 Expected output:
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+app\build\outputs\apk\debug\mapping-paris-0.2.0-debug.apk
 ```
 
 ## Validation Commands

@@ -20,6 +20,7 @@ class SegmentNetworkOverlay(
     private var segments: List<StreetSegment>,
     private var completionStates: Map<String, Boolean>,
     private var selectedSegmentIds: Set<String>,
+    private var mapMode: MapMode,
     private var onTapSegment: (String) -> Unit,
     private var onLongPressSegment: (String) -> Unit
 ) : Overlay() {
@@ -40,12 +41,14 @@ class SegmentNetworkOverlay(
         segments: List<StreetSegment>,
         completionStates: Map<String, Boolean>,
         selectedSegmentIds: Set<String>,
+        mapMode: MapMode,
         onTapSegment: (String) -> Unit,
         onLongPressSegment: (String) -> Unit
     ) {
         this.segments = segments
         this.completionStates = completionStates
         this.selectedSegmentIds = selectedSegmentIds
+        this.mapMode = mapMode
         this.onTapSegment = onTapSegment
         this.onLongPressSegment = onLongPressSegment
     }
@@ -81,14 +84,28 @@ class SegmentNetworkOverlay(
             } else {
                 basePaint.apply {
                     color = if (completionStates[segment.logicalSegmentId] == true) {
-                        Color.argb(82, 22, 136, 78)
+                        completedColor()
                     } else {
-                        Color.argb(66, 217, 75, 66)
+                        pendingColor()
                     }
                     strokeWidth = 9f
                 }
             }
             drawPolyline(canvas, mapView, segment.geometry, paint)
+        }
+    }
+
+    private fun completedColor(): Int {
+        return when (mapMode) {
+            MapMode.LIGHT -> Color.argb(104, 16, 118, 93)
+            MapMode.BLUE -> Color.argb(148, 44, 242, 196)
+        }
+    }
+
+    private fun pendingColor(): Int {
+        return when (mapMode) {
+            MapMode.LIGHT -> Color.argb(78, 178, 86, 77)
+            MapMode.BLUE -> Color.argb(92, 104, 132, 176)
         }
     }
 

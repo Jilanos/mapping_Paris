@@ -2,13 +2,13 @@
 
 From version: 0.1.0
 
-Status: Ready
+Status: Implemented
 
 Understanding: 94%
 
 Confidence: 88%
 
-Progress: 0%
+Progress: 95%
 
 Complexity: High
 
@@ -89,6 +89,9 @@ Urgency: High
 Filter UI should be powerful enough for 0.2 without overwhelming the map. If a
 filter is active but hidden, the current user decision is to avoid persistent
 chips; the implementation should still avoid confusing destructive behavior.
+
+Implementation note: delivered in task
+`docs/tasks/0005-deliver-android-0-2-mobile-ux-and-product-hardening.md`.
 
 ## Task Coverage
 
