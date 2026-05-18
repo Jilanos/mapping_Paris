@@ -25,9 +25,7 @@ const map = L.map("map", {
   minZoom: 12,
 }).setView([48.8566, 2.3522], 13);
 
-map.createPane("streetContext");
 map.createPane("segments");
-map.getPane("streetContext").style.zIndex = 410;
 map.getPane("segments").style.zIndex = 430;
 
 L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
@@ -44,7 +42,6 @@ const featureById = new Map();
 const selectedIds = new Set();
 let dataset = null;
 let meshLayer = null;
-let streetContextLayer = null;
 
 bootstrap();
 
@@ -54,29 +51,9 @@ async function bootstrap() {
   const response = await fetch(DATASET_URL);
   dataset = await response.json();
   elements.totalSegments.textContent = dataset.features.length.toLocaleString("fr-FR");
-  renderStreetContext(dataset);
   renderMesh(dataset);
   updateValidatedStats();
   renderSelectionDetails();
-}
-
-function renderStreetContext(geojson) {
-  streetContextLayer = L.geoJSON(geojson, {
-    pane: "streetContext",
-    renderer: L.canvas({ padding: 0.45 }),
-    interactive: false,
-    style: (feature) => {
-      const highway = feature.properties.highway;
-      const isMajor = ["primary", "secondary", "tertiary"].includes(highway);
-      return {
-        color: isMajor ? "#8aa2c6" : "#b7c4d7",
-        weight: isMajor ? 5 : 3,
-        opacity: isMajor ? 0.62 : 0.38,
-        lineCap: "round",
-        lineJoin: "round",
-      };
-    },
-  }).addTo(map);
 }
 
 function renderMesh(geojson) {
@@ -101,12 +78,12 @@ function renderMesh(geojson) {
 
 function styleFor(id) {
   if (selectedIds.has(id)) {
-    return { color: "#1df0bf", weight: 6, opacity: 0.98, lineCap: "round", lineJoin: "round" };
+    return { color: "#13dcb3", weight: 11, opacity: 0.76, lineCap: "round", lineJoin: "round" };
   }
   if (validationState[id]) {
-    return { color: "#2f8f5b", weight: 3, opacity: 0.86, lineCap: "round", lineJoin: "round" };
+    return { color: "#16884e", weight: 9, opacity: 0.32, lineCap: "round", lineJoin: "round" };
   }
-  return { color: "#b95247", weight: 2, opacity: 0.68, lineCap: "round", lineJoin: "round" };
+  return { color: "#d94b42", weight: 9, opacity: 0.26, lineCap: "round", lineJoin: "round" };
 }
 
 function toggleSegmentSelection(id) {

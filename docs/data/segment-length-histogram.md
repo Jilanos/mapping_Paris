@@ -4,80 +4,82 @@ Date: 2026-05-18
 
 Dataset: `data/generated/paris_segments.geojson`
 
-Total segments: 15,295
+Generation rule update:
 
-Total length: 1,430.73 km
+- segments shorter than 10 meters are removed from the generated dataset;
+- OSM ways are split at detected street intersections;
+- long between-intersection sections are split at existing OSM geometry nodes
+  with a 350 meter target maximum;
+- near-parallel same-name carriageways are deduplicated when they overlap, so a
+  boulevard is not treated as two different streets only because OSM stores both
+  traffic directions separately.
 
-Median segment length: 63.37 m
+Total segments: 18,154
 
-Minimum segment length: 2.02 m
+Total length: 1,355.51 km
 
-Maximum segment length: 1,220.69 m
+Median segment length: 59.65 m
+
+Minimum segment length: 10.01 m
+
+Maximum segment length: 459.75 m
 
 ## Histogram
 
 | Segment length | Count | Total length |
 | --- | ---: | ---: |
-| 0-5 m | 281 | 1.06 km |
-| 5-10 m | 932 | 7.14 km |
-| 10-20 m | 1,943 | 28.63 km |
-| 20-50 m | 3,451 | 114.81 km |
-| 50-100 m | 3,411 | 249.51 km |
-| 100-200 m | 3,501 | 495.91 km |
-| 200-500 m | 1,686 | 475.56 km |
-| 500-1000 m | 86 | 53.57 km |
-| >= 1000 m | 4 | 4.55 km |
+| 0-5 m | 0 | 0.00 km |
+| 5-10 m | 0 | 0.00 km |
+| 10-20 m | 2,709 | 40.04 km |
+| 20-50 m | 4,978 | 170.35 km |
+| 50-100 m | 5,696 | 412.57 km |
+| 100-200 m | 4,024 | 549.99 km |
+| 200-350 m | 739 | 179.48 km |
+| 350-500 m | 8 | 3.07 km |
+| 500-1000 m | 0 | 0.00 km |
+| >= 1000 m | 0 | 0.00 km |
 
 ```text
-0-5 m       281 | ##
-5-10 m      932 | #######
-10-20 m   1,943 | ################
-20-50 m   3,451 | ############################
-50-100 m  3,411 | ############################
-100-200 m 3,501 | #############################
-200-500 m 1,686 | ##############
-500-1000 m   86 | #
->= 1000 m     4 | #
+0-5 m         0 |
+5-10 m        0 |
+10-20 m   2,709 | ##############
+20-50 m   4,978 | ##########################
+50-100 m  5,696 | ##############################
+100-200 m 4,024 | #####################
+200-350 m   739 | ####
+350-500 m     8 | #
+500-1000 m    0 |
+>= 1000 m     0 |
 ```
 
-## Small Segment Finding
+## Long Segment Check
 
-There are 1,213 segments shorter than 10 meters.
+No generated segment is longer than 500 meters.
 
-There are 281 segments shorter than 5 meters.
+Only 8 generated segments remain above 350 meters. These are cases where the
+source OSM geometry has too few usable intermediate nodes to split cleanly
+without inventing new geometry points.
 
-The short-segment group is visually noisy and should be handled in the next
-dataset-generation pass.
+Examples:
 
-Recommended V1 rule:
+- Allée des Fortifications: 459.75 m
+- Cours Albert-Ier: 435.23 m
+- Chemin de l'Ancienne Écluse: 379.83 m
+- Allée de Longchamp: 371.94 m
+- Avenue Foch: 364.22 m
 
-- remove or merge segments shorter than 5 meters by default;
-- merge 5-10 meter segments into a same-street neighbor when they share or nearly
-  touch an endpoint;
-- keep short segments only when they are the only representation of a named
-  street connector.
+## Parallel Same-Street Check
 
-## Parallel Same-Street Finding
+The generator now deduplicates near-parallel same-name carriageways.
 
-Some Paris boulevards appear as two parallel OSM carriageways because OSM models
-separated lanes, medians, tram tracks, or pedestrian refuges as distinct ways.
-For this product, those should usually become one clickable street block. The
-user should not need to validate both directions of the same boulevard.
+Current result:
 
-Example: `Boulevard de Clichy` currently appears as multiple same-name parallel
-and adjacent segments around Place de Clichy.
+- 633 generated segments carry `merged_parallel_source_count`, meaning they
+  represent one logical clickable segment built from multiple near-parallel OSM
+  source ways.
+- `Boulevard de Clichy` went from 27 generated same-name segments after the
+  intersection split to 17 generated same-name segments after parallel
+  deduplication.
 
-Recommended V1 rule:
-
-- group candidate segments by normalized street name;
-- within each street group, detect near-parallel segments with similar bearing;
-- treat segments within roughly 8-18 meters of each other and with overlapping
-  projected length as the same logical street block;
-- merge each candidate group into one clickable segment/block using a simplified
-  centerline or representative geometry;
-- keep the source way ids in metadata for traceability.
-
-Open decision:
-
-- choose whether the source GeoJSON should store only the merged clickable
-  blocks, or store raw visual lanes plus a shared `logical_segment_id`.
+This is a heuristic V1. It reduces the "validate both directions" problem
+without trying to build a full GIS conflation engine.

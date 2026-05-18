@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import sys
 import time
 import urllib.parse
@@ -165,6 +166,10 @@ def stable_segment_id(
     return f"paris-seg-{digest}"
 
 
+def normalize_street_name(name: str) -> str:
+    return re.sub(r"\s+", " ", name.strip().casefold())
+
+
 def perpendicular_distance_meters(
     point: tuple[float, float],
     start: tuple[float, float],
@@ -209,6 +214,36 @@ def simplify_polyline(
     return [start, end]
 
 
+def split_indexes_for_way(
+    node_ids: list[int],
+    nodes: dict[int, tuple[float, float]],
+    node_usage: Counter[int],
+    max_length_meters: float,
+) -> list[int]:
+    split_indexes = {0, len(node_ids) - 1}
+    for index, node_id in enumerate(node_ids[1:-1], start=1):
+        if node_usage[node_id] > 1:
+            split_indexes.add(index)
+
+    ordered = sorted(split_indexes)
+    expanded = set(ordered)
+    for start_index, end_index in zip(ordered, ordered[1:]):
+        path = [nodes[node_id] for node_id in node_ids[start_index : end_index + 1]]
+        length_meters = sum(haversine_meters(a, b) for a, b in zip(path, path[1:]))
+        if length_meters <= max_length_meters:
+            continue
+        split_count = max(2, math.ceil(length_meters / max_length_meters))
+        target_step = length_meters / split_count
+        cumulative = 0.0
+        target = target_step
+        for local_index in range(1, len(path) - 1):
+            cumulative += haversine_meters(path[local_index - 1], path[local_index])
+            if cumulative >= target:
+                expanded.add(start_index + local_index)
+                target += target_step
+    return sorted(expanded)
+
+
 def should_keep_way(tags: dict[str, str]) -> bool:
     highway = tags.get("highway")
     if highway not in INCLUDED_HIGHWAYS:
@@ -227,6 +262,7 @@ def build_features(
     osm: dict[str, Any],
     min_length_meters: float,
     simplify_tolerance_meters: float,
+    max_length_meters: float,
 ) -> list[dict[str, Any]]:
     nodes: dict[int, tuple[float, float]] = {}
     ways: list[dict[str, Any]] = []
@@ -258,10 +294,12 @@ def build_features(
             continue
         street_name = tags.get("name") or tags.get("ref") or "Unnamed way"
         highway = tags.get("highway", "unknown")
-        # OSM ways in Paris are already heavily split around streets and intersections.
-        # Treating the whole filtered way as the first clickable segment keeps the
-        # generated mesh dense without producing hundreds of thousands of micro-segments.
-        ordered_split_indexes = [0, len(node_ids) - 1]
+        ordered_split_indexes = split_indexes_for_way(
+            node_ids=node_ids,
+            nodes=nodes,
+            node_usage=node_usage,
+            max_length_meters=max_length_meters,
+        )
 
         for split_index, (start_index, end_index) in enumerate(zip(ordered_split_indexes, ordered_split_indexes[1:])):
             path = [nodes[node_id] for node_id in node_ids[start_index : end_index + 1]]
@@ -317,7 +355,130 @@ def build_features(
                     },
                 }
             )
-    return features
+    return remove_parallel_same_street_duplicates(features)
+
+
+def remove_parallel_same_street_duplicates(features: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for feature in features:
+        name = feature["properties"].get("street_name", "")
+        grouped.setdefault(normalize_street_name(name), []).append(feature)
+
+    result: list[dict[str, Any]] = []
+    for name, group in grouped.items():
+        if name in {"", "unnamed way"} or len(group) == 1:
+            result.extend(group)
+            continue
+        kept: list[dict[str, Any]] = []
+        for feature in sorted(group, key=lambda item: item["properties"]["length_meters"], reverse=True):
+            duplicate_of = next(
+                (candidate for candidate in kept if is_parallel_duplicate(feature, candidate)),
+                None,
+            )
+            if duplicate_of is None:
+                kept.append(feature)
+            else:
+                duplicate_of["properties"]["merged_parallel_source_count"] = (
+                    duplicate_of["properties"].get("merged_parallel_source_count", 1) + 1
+                )
+        result.extend(kept)
+    return result
+
+
+def is_parallel_duplicate(left: dict[str, Any], right: dict[str, Any]) -> bool:
+    left_points = [tuple(point) for point in left["geometry"]["coordinates"]]
+    right_points = [tuple(point) for point in right["geometry"]["coordinates"]]
+    if len(left_points) < 2 or len(right_points) < 2:
+        return False
+
+    left_line = line_metrics(left_points)
+    right_line = line_metrics(right_points)
+    if left_line["length"] < 20 or right_line["length"] < 20:
+        return False
+    angle_delta = abs(left_line["angle"] - right_line["angle"])
+    angle_delta = min(angle_delta, 180 - angle_delta)
+    if angle_delta > 14:
+        return False
+
+    distance = point_to_segment_distance_meters(
+        right_line["midpoint"],
+        left_line["start"],
+        left_line["end"],
+    )
+    if distance > 32:
+        return False
+
+    overlap = interval_overlap(left_line["range"], project_interval(right_points, left_line))
+    shortest = min(left_line["length"], right_line["length"])
+    return shortest > 0 and overlap / shortest >= 0.22
+
+
+def line_metrics(points: list[tuple[float, float]]) -> dict[str, Any]:
+    start = points[0]
+    end = points[-1]
+    midpoint_value = midpoint(points)
+    dx = (end[0] - start[0]) * 111_320 * math.cos(math.radians(midpoint_value[1]))
+    dy = (end[1] - start[1]) * 111_320
+    angle = math.degrees(math.atan2(dy, dx)) % 180
+    projected = project_interval(points, {"start": start, "end": end})
+    return {
+        "start": start,
+        "end": end,
+        "midpoint": midpoint_value,
+        "angle": angle,
+        "length": max(haversine_meters(start, end), 0.001),
+        "range": projected,
+    }
+
+
+def project_interval(points: list[tuple[float, float]], line: dict[str, Any]) -> tuple[float, float]:
+    start = line["start"]
+    end = line["end"]
+    mid_lat = (start[1] + end[1]) / 2
+    sx, sy = lonlat_to_xy(start, mid_lat)
+    ex, ey = lonlat_to_xy(end, mid_lat)
+    dx = ex - sx
+    dy = ey - sy
+    denominator = dx * dx + dy * dy
+    if denominator == 0:
+        return (0.0, 0.0)
+    values = []
+    for point in points:
+        px, py = lonlat_to_xy(point, mid_lat)
+        values.append(((px - sx) * dx + (py - sy) * dy) / math.sqrt(denominator))
+    return min(values), max(values)
+
+
+def lonlat_to_xy(point: tuple[float, float], reference_lat: float) -> tuple[float, float]:
+    lon, lat = point
+    return (
+        lon * 111_320 * math.cos(math.radians(reference_lat)),
+        lat * 111_320,
+    )
+
+
+def point_to_segment_distance_meters(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> float:
+    mid_lat = (start[1] + end[1]) / 2
+    px, py = lonlat_to_xy(point, mid_lat)
+    sx, sy = lonlat_to_xy(start, mid_lat)
+    ex, ey = lonlat_to_xy(end, mid_lat)
+    dx = ex - sx
+    dy = ey - sy
+    if dx == 0 and dy == 0:
+        return math.hypot(px - sx, py - sy)
+    t = ((px - sx) * dx + (py - sy) * dy) / (dx * dx + dy * dy)
+    t = max(0.0, min(1.0, t))
+    projected_x = sx + t * dx
+    projected_y = sy + t * dy
+    return math.hypot(px - projected_x, py - projected_y)
+
+
+def interval_overlap(left: tuple[float, float], right: tuple[float, float]) -> float:
+    return max(0.0, min(left[1], right[1]) - max(left[0], right[0]))
 
 
 def accessibility_label(highway: str, tags: dict[str, str]) -> str:
@@ -398,8 +559,9 @@ def main() -> int:
     parser.add_argument("--out", default="data/generated/paris_segments.geojson")
     parser.add_argument("--summary", default="docs/data/generated-segment-summary.md")
     parser.add_argument("--refresh", action="store_true")
-    parser.add_argument("--min-length-meters", type=float, default=2.0)
+    parser.add_argument("--min-length-meters", type=float, default=10.0)
     parser.add_argument("--simplify-tolerance-meters", type=float, default=4.0)
+    parser.add_argument("--max-length-meters", type=float, default=350.0)
     args = parser.parse_args()
 
     raw_path = Path(args.raw)
@@ -411,6 +573,7 @@ def main() -> int:
         osm,
         min_length_meters=args.min_length_meters,
         simplify_tolerance_meters=args.simplify_tolerance_meters,
+        max_length_meters=args.max_length_meters,
     )
     if len(features) < 1000:
         print(f"Generated only {len(features)} segments; expected dense Paris mesh.", file=sys.stderr)
