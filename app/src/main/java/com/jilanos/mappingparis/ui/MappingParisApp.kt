@@ -3,7 +3,9 @@ package com.jilanos.mappingparis.ui
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,11 +19,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedButton
@@ -29,8 +31,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -44,16 +49,20 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
 import java.util.Locale
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
 import org.osmdroid.views.MapView
@@ -123,7 +132,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
                     onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
                     onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
-                    modifier = Modifier.align(Alignment.TopStart)
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .zIndex(20f)
                 )
 
                 when (activePanel) {
@@ -136,6 +147,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         modifier = Modifier
                             .align(Alignment.TopStart)
                             .padding(start = 16.dp, top = 72.dp, end = 16.dp)
+                            .zIndex(19f)
                     )
 
                     OverlayPanel.SEARCH -> SearchPanel(
@@ -150,6 +162,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .padding(start = 16.dp, top = 72.dp, end = 16.dp)
+                            .zIndex(19f)
                     )
 
                     OverlayPanel.FILTER -> FilterPanel(
@@ -161,13 +174,14 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         modifier = Modifier
                             .align(Alignment.TopEnd)
                             .padding(start = 16.dp, top = 72.dp, end = 16.dp)
+                            .zIndex(19f)
                     )
 
                     OverlayPanel.SETTINGS -> SettingsView(
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.2.0.json")
+                            exportLauncher.launch("mapping-paris-completion-0.2.1.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true }
@@ -195,11 +209,12 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                             val targetCompleted = !uiState.allSelectedCompleted
                             viewModel.setSelectedCompletion(targetCompleted)
                             scope.launch {
-                                val result = snackbarHostState.showSnackbar(
+                                val result = showUndoSnackbar(
+                                    snackbarHostState = snackbarHostState,
                                     message = if (targetCompleted) "Segments marques parcourus" else "Segments marques non parcourus",
                                     actionLabel = "Annuler"
                                 )
-                                if (result == androidx.compose.material3.SnackbarResult.ActionPerformed) {
+                                if (result == SnackbarResult.ActionPerformed) {
                                     viewModel.restoreCompletionStates(previousStates)
                                 }
                             }
@@ -211,7 +226,11 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
 
                 SnackbarHost(
                     hostState = snackbarHostState,
-                    modifier = Modifier.align(Alignment.BottomCenter)
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(12.dp)
+                        .zIndex(30f),
+                    snackbar = { data -> MappingParisSnackbar(data) }
                 )
             }
         }
@@ -279,6 +298,48 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
     }
 }
 
+private suspend fun showUndoSnackbar(
+    snackbarHostState: SnackbarHostState,
+    message: String,
+    actionLabel: String
+): SnackbarResult {
+    return withTimeoutOrNull(3000) {
+        snackbarHostState.showSnackbar(
+            message = message,
+            actionLabel = actionLabel,
+            duration = SnackbarDuration.Indefinite
+        )
+    } ?: SnackbarResult.Dismissed
+}
+
+@Composable
+private fun MappingParisSnackbar(data: SnackbarData) {
+    Surface(
+        shape = RoundedCornerShape(14.dp),
+        color = Color(0xFF071F48).copy(alpha = 0.96f),
+        contentColor = Color.White,
+        tonalElevation = 8.dp,
+        shadowElevation = 10.dp
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                data.visuals.message,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium
+            )
+            data.visuals.actionLabel?.let { action ->
+                TextButton(onClick = data::performAction) {
+                    Text(action, color = Color(0xFF2FF3C5), fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+    }
+}
+
 @Composable
 private fun MapTopControls(
     activePanel: OverlayPanel,
@@ -288,40 +349,115 @@ private fun MapTopControls(
     onFilter: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier.padding(16.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(16.dp)
     ) {
+        Row(
+            modifier = Modifier.align(Alignment.TopStart),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            MapControlButton(
+                kind = MapControlKind.MENU,
+                active = activePanel == OverlayPanel.MENU,
+                onClick = onMenu
+            )
+            MapControlButton(
+                kind = MapControlKind.SEARCH,
+                active = activePanel == OverlayPanel.SEARCH,
+                onClick = onSearch
+            )
+        }
         MapControlButton(
-            label = "Menu",
-            active = activePanel == OverlayPanel.MENU,
-            onClick = onMenu
-        )
-        MapControlButton(
-            label = "Search",
-            active = activePanel == OverlayPanel.SEARCH,
-            onClick = onSearch
-        )
-        MapControlButton(
-            label = "Filter",
+            kind = MapControlKind.FILTER,
             active = activePanel == OverlayPanel.FILTER || filterActive,
-            onClick = onFilter
+            onClick = onFilter,
+            modifier = Modifier.align(Alignment.TopEnd)
         )
     }
 }
 
 @Composable
-private fun MapControlButton(label: String, active: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (active) Color(0xFF082252) else Color.White,
-            contentColor = if (active) Color.White else Color(0xFF17324D)
-        ),
-        modifier = Modifier.height(44.dp)
+private fun MapControlButton(
+    kind: MapControlKind,
+    active: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier
+            .size(52.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        shape = CircleShape,
+        color = if (active) Color(0xFF071F48) else Color.White.copy(alpha = 0.96f),
+        contentColor = if (active) Color.White else Color(0xFF17324D),
+        border = BorderStroke(1.dp, if (active) Color(0xFF2FF3C5) else Color(0x33496DA6)),
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp
     ) {
-        Text(label)
+        MapControlIcon(kind = kind, active = active)
     }
+}
+
+@Composable
+private fun MapControlIcon(kind: MapControlKind, active: Boolean) {
+    val color = if (active) Color.White else Color(0xFF17324D)
+    val accent = if (active) Color(0xFF2FF3C5) else Color(0xFF496DA6)
+    Canvas(modifier = Modifier.fillMaxSize().padding(14.dp)) {
+        val stroke = 3.2f
+        when (kind) {
+            MapControlKind.MENU -> {
+                listOf(0.25f, 0.5f, 0.75f).forEach { y ->
+                    drawLine(
+                        color = color,
+                        start = Offset(size.width * 0.16f, size.height * y),
+                        end = Offset(size.width * 0.84f, size.height * y),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+
+            MapControlKind.SEARCH -> {
+                drawCircle(
+                    color = color,
+                    radius = size.minDimension * 0.28f,
+                    center = Offset(size.width * 0.43f, size.height * 0.42f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.62f, size.height * 0.62f),
+                    end = Offset(size.width * 0.86f, size.height * 0.86f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+            }
+
+            MapControlKind.FILTER -> {
+                val widths = listOf(0.68f, 0.52f, 0.36f)
+                listOf(0.28f, 0.5f, 0.72f).forEachIndexed { index, y ->
+                    val halfWidth = size.width * widths[index] / 2f
+                    val centerX = size.width * 0.5f
+                    drawLine(
+                        color = if (index == 0) accent else color,
+                        start = Offset(centerX - halfWidth, size.height * y),
+                        end = Offset(centerX + halfWidth, size.height * y),
+                        strokeWidth = stroke,
+                        cap = StrokeCap.Round
+                    )
+                }
+            }
+        }
+    }
+}
+
+private enum class MapControlKind {
+    MENU,
+    SEARCH,
+    FILTER
 }
 
 @Composable
