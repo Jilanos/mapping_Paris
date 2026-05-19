@@ -58,8 +58,11 @@ The Android app can now:
 - recenter only when the GPS button is pressed;
 - keep GPS-assisted behavior disabled by default on first install;
 - expose GPS assistance and matching strictness in settings;
+- expose a configurable GPS segment coverage threshold, default `70%`;
 - use the foreground GPS path to propose likely covered segments as editable
   selections;
+- require at least two GPS positions spanning the configured share of a segment
+  before proposing it;
 - keep final completion under explicit user control.
 
 GPS data stays local to the device. When GPS assistance is enabled, the app can

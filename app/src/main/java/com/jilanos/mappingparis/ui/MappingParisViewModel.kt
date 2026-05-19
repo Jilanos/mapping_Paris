@@ -95,6 +95,7 @@ data class MappingParisUiState(
     val gpsAssistedEnabled: Boolean = false,
     val gpsAvailability: GpsAvailability = GpsAvailability.OFF,
     val gpsMatchingStrictness: GpsMatchingStrictness = GpsMatchingStrictness.BALANCED,
+    val gpsCoverageThresholdPercent: Int = 70,
     val currentLocation: UserLocation? = null,
     val gpsProposedSegmentIds: Set<String> = emptySet()
 ) {
@@ -208,6 +209,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             it.name == preferences.getString(KEY_GPS_MATCHING_STRICTNESS, null)
         } ?: GpsMatchingStrictness.BALANCED
     )
+    private val gpsCoverageThresholdPercent = MutableStateFlow(
+        preferences.getInt(KEY_GPS_COVERAGE_THRESHOLD_PERCENT, DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT)
+            .coerceIn(MIN_GPS_COVERAGE_THRESHOLD_PERCENT, MAX_GPS_COVERAGE_THRESHOLD_PERCENT)
+    )
     private val currentLocation = MutableStateFlow<UserLocation?>(null)
     private val gpsProposedSegmentIds = MutableStateFlow<Set<String>>(emptySet())
     private val segments = MutableStateFlow(repository.loadSegments())
@@ -229,6 +234,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             gpsAssistedEnabled,
             gpsAvailability,
             gpsMatchingStrictness,
+            gpsCoverageThresholdPercent,
             currentLocation,
             gpsProposedSegmentIds
         ) { values ->
@@ -246,8 +252,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 gpsAssistedEnabled = values[9] as Boolean,
                 gpsAvailability = values[10] as GpsAvailability,
                 gpsMatchingStrictness = values[11] as GpsMatchingStrictness,
-                currentLocation = values[12] as UserLocation?,
-                gpsProposedSegmentIds = values[13] as Set<String>
+                gpsCoverageThresholdPercent = values[12] as Int,
+                currentLocation = values[13] as UserLocation?,
+                gpsProposedSegmentIds = values[14] as Set<String>
             )
         }.stateIn(
             scope = viewModelScope,
@@ -330,6 +337,16 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         rebuildGpsProposals()
     }
 
+    fun setGpsCoverageThresholdPercent(percent: Int) {
+        val normalized = percent.coerceIn(
+            MIN_GPS_COVERAGE_THRESHOLD_PERCENT,
+            MAX_GPS_COVERAGE_THRESHOLD_PERCENT
+        )
+        preferences.edit().putInt(KEY_GPS_COVERAGE_THRESHOLD_PERCENT, normalized).apply()
+        gpsCoverageThresholdPercent.value = normalized
+        rebuildGpsProposals()
+    }
+
     fun onGpsPermissionDenied() {
         gpsAvailability.value = GpsAvailability.PERMISSION_DENIED
         currentLocation.value = null
@@ -396,7 +413,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.3.2")
+            .put("appVersion", "0.3.3")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
@@ -455,13 +472,19 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
 
         val previousProposals = gpsProposedSegmentIds.value
         val maxDistance = gpsMatchingStrictness.value.maxDistanceMeters
+        val thresholdRatio = gpsCoverageThresholdPercent.value / 100.0
         val proposed = segments.value
             .logicalRepresentatives()
             .filter { segment ->
                 completionStatesSnapshot()[segment.logicalSegmentId] != true &&
                     segment.logicalSegmentId !in dismissedGpsProposalIds &&
                     segment.geometry.size >= 2 &&
-                    gpsPath.any { point -> distanceToPolylineMeters(point, segment.geometry) <= maxDistance }
+                    segmentHasRequiredGpsCoverage(
+                        segment = segment,
+                        gpsPoints = gpsPath,
+                        maxDistanceMeters = maxDistance,
+                        thresholdRatio = thresholdRatio
+                    )
             }
             .map { it.logicalSegmentId }
             .toSet()
@@ -481,19 +504,61 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private companion object {
         const val KEY_GPS_ASSISTED_ENABLED = "gps_assisted_enabled"
         const val KEY_GPS_MATCHING_STRICTNESS = "gps_matching_strictness"
+        const val KEY_GPS_COVERAGE_THRESHOLD_PERCENT = "gps_coverage_threshold_percent"
         const val GPS_PATH_MIN_STEP_METERS = 12.0
+        const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
+        const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30
+        const val MAX_GPS_COVERAGE_THRESHOLD_PERCENT = 95
     }
 }
 
-private fun distanceToPolylineMeters(point: LatLon, geometry: List<LatLon>): Double {
-    var nearest = Double.POSITIVE_INFINITY
+private fun segmentHasRequiredGpsCoverage(
+    segment: StreetSegment,
+    gpsPoints: List<LatLon>,
+    maxDistanceMeters: Double,
+    thresholdRatio: Double
+): Boolean {
+    if (gpsPoints.size < 2 || segment.geometry.size < 2) return false
+    val projections = gpsPoints.mapNotNull { point ->
+        projectPointOnPolylineMeters(point, segment.geometry)
+            ?.takeIf { it.distanceToLineMeters <= maxDistanceMeters }
+            ?.projectedDistanceMeters
+    }
+    if (projections.size < 2) return false
+    val minProjection = projections.minOrNull() ?: return false
+    val maxProjection = projections.maxOrNull() ?: return false
+    val segmentLength = maxOf(segment.lengthMeters, polylineLengthMeters(segment.geometry))
+    if (segmentLength <= 0.0) return false
+    return (maxProjection - minProjection) / segmentLength >= thresholdRatio
+}
+
+private fun projectPointOnPolylineMeters(point: LatLon, geometry: List<LatLon>): PolylineProjection? {
+    var nearest: PolylineProjection? = null
+    var distanceBeforeSegment = 0.0
     for (index in 0 until geometry.lastIndex) {
-        nearest = minOf(nearest, distanceToSegmentMeters(point, geometry[index], geometry[index + 1]))
+        val start = geometry[index]
+        val end = geometry[index + 1]
+        val segmentLength = distanceMeters(start, end)
+        val projection = projectPointOnSegmentMeters(
+            point = point,
+            start = start,
+            end = end,
+            distanceBeforeSegment = distanceBeforeSegment
+        )
+        if (nearest == null || projection.distanceToLineMeters < nearest.distanceToLineMeters) {
+            nearest = projection
+        }
+        distanceBeforeSegment += segmentLength
     }
     return nearest
 }
 
-private fun distanceToSegmentMeters(point: LatLon, start: LatLon, end: LatLon): Double {
+private fun projectPointOnSegmentMeters(
+    point: LatLon,
+    start: LatLon,
+    end: LatLon,
+    distanceBeforeSegment: Double
+): PolylineProjection {
     val originLat = point.latitude
     val originLon = point.longitude
     val px = 0.0
@@ -504,12 +569,29 @@ private fun distanceToSegmentMeters(point: LatLon, start: LatLon, end: LatLon): 
     val ey = latitudeMeters(end.latitude - originLat)
     val dx = ex - sx
     val dy = ey - sy
-    if (hypot(dx, dy) < 0.001) return hypot(sx - px, sy - py)
+    val segmentLength = hypot(dx, dy)
+    if (segmentLength < 0.001) {
+        return PolylineProjection(
+            distanceToLineMeters = hypot(sx - px, sy - py),
+            projectedDistanceMeters = distanceBeforeSegment
+        )
+    }
     val t = (((px - sx) * dx) + ((py - sy) * dy)) / ((dx * dx) + (dy * dy))
     val clamped = t.coerceIn(0.0, 1.0)
     val projectedX = sx + clamped * dx
     val projectedY = sy + clamped * dy
-    return hypot(projectedX - px, projectedY - py)
+    return PolylineProjection(
+        distanceToLineMeters = hypot(projectedX - px, projectedY - py),
+        projectedDistanceMeters = distanceBeforeSegment + (segmentLength * clamped)
+    )
+}
+
+private fun polylineLengthMeters(geometry: List<LatLon>): Double {
+    var length = 0.0
+    for (index in 0 until geometry.lastIndex) {
+        length += distanceMeters(geometry[index], geometry[index + 1])
+    }
+    return length
 }
 
 private fun distanceMeters(start: LatLon, end: LatLon): Double {
@@ -523,3 +605,8 @@ private fun latitudeMeters(deltaLatitude: Double): Double = deltaLatitude * 111_
 private fun longitudeMeters(deltaLongitude: Double, latitude: Double): Double {
     return deltaLongitude * 111_320.0 * cos(Math.toRadians(latitude))
 }
+
+private data class PolylineProjection(
+    val distanceToLineMeters: Double,
+    val projectedDistanceMeters: Double
+)

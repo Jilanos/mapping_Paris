@@ -13,14 +13,13 @@ Branch: `main`
 The project is a local-first personal Android app plus PWA tester for manually
 tracking completed street segments in Paris intra-muros.
 
-Current latest pushed commit before the uncommitted 0.3.2 permission and install
-documentation work:
+Current latest pushed commit before the 0.3.3 GPS QOL work:
 
-- `ee48151 Keep GPS tracking active when phone is locked`
+- `a82ff7c Release Android 0.3.2 permissions and install guidance`
 
 Generated APK available locally:
 
-- `app/build/outputs/apk/debug/mapping-paris-0.3.2-debug.apk`
+- `app/build/outputs/apk/debug/mapping-paris-0.3.3-debug.apk`
 
 Current datasets:
 
@@ -67,8 +66,8 @@ Key model decision:
 
 ## Version 0.3 GPS State
 
-- Android `versionName` is `0.3.2`.
-- Android `versionCode` is `9`.
+- Android `versionName` is `0.3.3`.
+- Android `versionCode` is `10`.
 - Foreground, background, foreground-service-location, and notification
   permissions are declared for the current GPS testing flow.
 - GPS-assisted behavior is stored in local settings and disabled by default on
@@ -81,9 +80,12 @@ Key model decision:
   chips and settings labels.
 - Settings includes GPS-assisted behavior plus strict, balanced, and wide
   matching strictness.
+- Settings includes a GPS coverage threshold slider, default `70%`, range
+  `30%` to `95%`.
 - While GPS assistance is enabled, a foreground service keeps location updates
   active when the phone is locked.
-- GPS path matching proposes likely nearby logical segments conservatively.
+- GPS path matching proposes logical segments only after at least two matched
+  GPS positions cover the configured share of the segment length.
 - GPS proposals are selected for review and use a distinct temporary style.
 - The user can deselect proposed segments before validation.
 - Segments are never completed automatically from GPS.
@@ -107,7 +109,12 @@ Key model decision:
 - Uncompleted segments are a stronger red, completed segments remain teal.
 - Map debug markers can be enabled in settings to show zoom, screen size, and a
   48 px ruler.
-- Pinch zoom has an additional osmdroid gesture amplifier.
+- Pinch zoom no longer uses the custom osmdroid gesture amplifier.
+- Segment overlay drawing is culled to the current viewport to reduce pinch
+  redraw cost at high zoom.
+- The GPS button is hidden while panels are open to avoid close-button clashes.
+- Compose zoom buttons are now on the right side above the bottom validation
+  bar area.
 - Segment endpoints are rounded.
 - Unselected segments are rendered into an isolated layer using source
   replacement so same-color overlaps do not become visually darker.
@@ -167,6 +174,12 @@ Icon and README visual assets:
 - `docs/backlog/0030-version-0-3-gps-release-docs-and-validation.md`
 - `docs/tasks/0007-deliver-android-0-3-gps-position-and-segment-proposals.md`
 - `docs/releases/RELEASE_0.3.0.md`
+- `docs/request/0007-improve-gps-segment-validation-threshold-controls-and-zoom-performance.md`
+- `docs/backlog/0031-gps-segment-coverage-threshold.md`
+- `docs/backlog/0032-map-control-placement-and-safe-areas.md`
+- `docs/backlog/0033-pinch-zoom-performance-diagnosis-and-fix.md`
+- `docs/tasks/0008-deliver-android-0-3-3-gps-qol-and-zoom-performance.md`
+- `docs/releases/RELEASE_0.3.3.md`
 
 ## Validation Commands
 
@@ -185,13 +198,13 @@ node --check tools\dev-server.mjs
 APK verification:
 
 ```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\debug\mapping-paris-0.3.2-debug.apk
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\debug\mapping-paris-0.3.3-debug.apk
 ```
 
 APK asset inspection:
 
 ```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\aapt.exe" list app\build\outputs\apk\debug\mapping-paris-0.3.2-debug.apk
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\aapt.exe" list app\build\outputs\apk\debug\mapping-paris-0.3.3-debug.apk
 ```
 
 PWA local test:
@@ -246,6 +259,13 @@ http://localhost:5173/pwa/
   - It prints the manual uninstall and reinstall commands.
 - `git diff --check`
   - OK after the 0.3 GPS changes, with only expected CRLF conversion warnings.
+- `.\gradlew.bat --no-daemon --stacktrace :app:compileDebugKotlin`
+  - BUILD SUCCESSFUL after Android 0.3.3 GPS QOL changes.
+- `cmd /c tools\build-and-install-debug-apk.cmd`
+  - BUILD SUCCESSFUL for `mapping-paris-0.3.3-debug.apk`.
+  - Installed successfully on connected device `37290DLJH004PP`.
+- `adb shell dumpsys package com.jilanos.mappingparis`
+  - Confirmed `versionName=0.3.3`, `versionCode=10`.
 
 ## Known Risks / Next Checks
 
@@ -255,7 +275,10 @@ http://localhost:5173/pwa/
 - Walk with the app open and verify that GPS-proposed segments are conservative,
   editable, visually distinct, and not completed until explicit validation.
 - Check strict, balanced, and wide matching settings on real streets.
-- Re-run APK signature verification for `mapping-paris-0.3.2-debug.apk`.
+- Re-run APK signature verification for `mapping-paris-0.3.3-debug.apk`.
+- Walk-test the 70% GPS coverage rule and tune the slider range if needed.
+- Check pinch zoom subjectively on the phone in dense areas after the amplifier
+  removal and viewport culling.
 - Check Boulevard Marguerite de Rochechouart and Boulevard de Clichy on device:
   parallel lanes should remain visible and linked as one logical block.
 - Check whether filtering visual segments shorter than 20 m removes too many
@@ -277,12 +300,14 @@ http://localhost:5173/pwa/
 ```text
 Je reprends le projet mapping_Paris. Lis docs/development/handoff-next-codex.md.
 
-Objectif immediat: tester le nouvel APK 0.3.2 sur mobile. Le dernier APK est
-app/build/outputs/apk/debug/mapping-paris-0.3.2-debug.apk. Verifie en priorite
-le GPS: off par defaut, demande de permission, affichage position et rayon de
-precision, bouton recenter sans verrouiller la camera, et propositions de
-segments GPS editables/non validees. Verifie aussi light/blue mode, selection,
-validation manuelle, settings, search, filters, import/export et statistiques.
+Objectif immediat: tester le nouvel APK 0.3.3 sur mobile. Le dernier APK est
+app/build/outputs/apk/debug/mapping-paris-0.3.3-debug.apk. Verifie en priorite
+le GPS: seuil de couverture 70%, slider en parametres, propositions seulement
+apres deux positions suffisamment espacees sur un segment, fonctionnement ecran
+verrouille, et absence de validation automatique. Verifie aussi le placement du
+bouton GPS avec les panneaux ouverts, les zooms plus et moins a droite, le pinch
+zoom, light/blue mode, selection, validation manuelle, settings, search,
+filters, import/export et statistiques.
 Si ADB signale INSTALL_FAILED_UPDATE_INCOMPATIBLE, exporter la progression si
 possible, puis desinstaller com.jilanos.mappingparis et relancer l'installation.
 Verifie d'abord l'etat Git, puis travaille uniquement sur les retours de test

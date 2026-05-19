@@ -42,6 +42,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarData
@@ -77,10 +78,12 @@ import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
 import com.jilanos.mappingparis.location.GpsTrackingService
 import java.util.Locale
+import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import org.osmdroid.tileprovider.tilesource.XYTileSource
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.views.CustomZoomButtonsController
 import org.osmdroid.views.MapView
 
 private enum class OverlayPanel {
@@ -104,6 +107,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
     var showResetConfirmation by remember { mutableStateOf(false) }
     var showBackgroundLocationSettingsPrompt by remember { mutableStateOf(false) }
+    var mapViewRef by remember { mutableStateOf<MapView?>(null) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -205,6 +209,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     showDebugOverlay = uiState.showMapDebugOverlay,
                     onSelectSegment = viewModel::selectSegment,
                     onLongPressSegment = viewModel::addSegmentToSelection,
+                    onMapReady = { mapViewRef = it },
                     modifier = Modifier.fillMaxSize()
                 )
 
@@ -216,6 +221,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
                         onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
                         onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
+                        showGps = activePanel == OverlayPanel.NONE,
                         onGps = {
                             if (!uiState.gpsAssistedEnabled || !hasForegroundLocationPermission(context)) {
                                 requestGpsUse(recenterIfPossible = true)
@@ -229,6 +235,19 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                             .zIndex(20f)
                     )
                 }
+
+                MapZoomControls(
+                    onZoomIn = { mapViewRef?.controller?.zoomIn() },
+                    onZoomOut = { mapViewRef?.controller?.zoomOut() },
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .navigationBarsPadding()
+                        .padding(
+                            end = 16.dp,
+                            bottom = if (uiState.selectedSegmentIds.isNotEmpty()) 172.dp else 28.dp
+                        )
+                        .zIndex(18f)
+                )
 
                 when (activePanel) {
                     OverlayPanel.MENU -> MainMenu(
@@ -277,7 +296,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.3.2.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.3.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -289,6 +308,8 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         },
                         gpsMatchingStrictness = uiState.gpsMatchingStrictness,
                         onGpsMatchingStrictnessChange = viewModel::setGpsMatchingStrictness,
+                        gpsCoverageThresholdPercent = uiState.gpsCoverageThresholdPercent,
+                        onGpsCoverageThresholdChange = viewModel::setGpsCoverageThresholdPercent,
                         gpsAvailability = uiState.gpsAvailability,
                         versionLabel = versionLabel,
                         modifier = Modifier
@@ -656,6 +677,7 @@ private fun MapTopControls(
     onMenu: () -> Unit,
     onSearch: () -> Unit,
     onFilter: () -> Unit,
+    showGps: Boolean,
     onGps: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -688,11 +710,49 @@ private fun MapTopControls(
                 active = activePanel == OverlayPanel.FILTER || filterActive,
                 onClick = onFilter
             )
-            MapControlButton(
-                kind = MapControlKind.GPS,
-                active = gpsActive,
-                onClick = onGps
-            )
+            if (showGps) {
+                MapControlButton(
+                    kind = MapControlKind.GPS,
+                    active = gpsActive,
+                    onClick = onGps
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun MapZoomControls(
+    onZoomIn: () -> Unit,
+    onZoomOut: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Column(
+        modifier = modifier,
+        verticalArrangement = Arrangement.spacedBy(10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        MapZoomButton(symbol = "+", onClick = onZoomIn)
+        MapZoomButton(symbol = "-", onClick = onZoomOut)
+    }
+}
+
+@Composable
+private fun MapZoomButton(symbol: String, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .size(48.dp)
+            .clip(CircleShape)
+            .clickable(onClick = onClick),
+        shape = CircleShape,
+        color = Color.White.copy(alpha = 0.96f),
+        contentColor = Color(0xFF17324D),
+        border = BorderStroke(1.dp, Color(0x33496DA6)),
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp
+    ) {
+        Box(contentAlignment = Alignment.Center) {
+            Text(symbol, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
         }
     }
 }
@@ -1019,6 +1079,8 @@ private fun SettingsView(
     onGpsAssistedChange: (Boolean) -> Unit,
     gpsMatchingStrictness: GpsMatchingStrictness,
     onGpsMatchingStrictnessChange: (GpsMatchingStrictness) -> Unit,
+    gpsCoverageThresholdPercent: Int,
+    onGpsCoverageThresholdChange: (Int) -> Unit,
     gpsAvailability: GpsAvailability,
     versionLabel: String,
     modifier: Modifier = Modifier
@@ -1057,6 +1119,26 @@ private fun SettingsView(
                         Text(strictness.label)
                     }
                 }
+                Text(
+                    "Couverture minimale: $gpsCoverageThresholdPercent%",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Slider(
+                    value = gpsCoverageThresholdPercent.toFloat(),
+                    onValueChange = { value ->
+                        val stepped = (value / 5f).roundToInt() * 5
+                        onGpsCoverageThresholdChange(stepped)
+                    },
+                    valueRange = 30f..95f,
+                    steps = 12,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                Text(
+                    "Un segment est propose apres deux positions couvrant au moins cette part de sa longueur.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF52606D)
+                )
             }
             FilterCheckbox(
                 checked = showDebugOverlay,
@@ -1268,6 +1350,7 @@ private fun SegmentMap(
     showDebugOverlay: Boolean,
     onSelectSegment: (String) -> Unit,
     onLongPressSegment: (String) -> Unit,
+    onMapReady: (MapView) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -1277,6 +1360,7 @@ private fun SegmentMap(
             MapView(context).apply {
                 setTileSource(CartoLightTileSource)
                 setMultiTouchControls(true)
+                zoomController.setVisibility(CustomZoomButtonsController.Visibility.NEVER)
                 isTilesScaledToDpi = true
                 setUseDataConnection(true)
                 setPadding(0, 0, 0, 96)
@@ -1297,11 +1381,10 @@ private fun SegmentMap(
                     location = currentLocation,
                     mapMode = mapMode
                 )
-                val pinchZoomAmplifierOverlay = PinchZoomAmplifierOverlay()
                 overlays.add(segmentOverlay)
                 overlays.add(locationOverlay)
-                overlays.add(pinchZoomAmplifierOverlay)
                 tag = SegmentMapOverlayHolder(segmentOverlay, locationOverlay, basemapOverlay)
+                onMapReady(this)
             }
         },
         update = { mapView ->

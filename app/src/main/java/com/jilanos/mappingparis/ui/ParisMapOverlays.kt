@@ -8,14 +8,12 @@ import android.graphics.Point
 import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.view.MotionEvent
-import android.view.ScaleGestureDetector
 import com.jilanos.mappingparis.data.LatLon
 import com.jilanos.mappingparis.data.StreetSegment
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.hypot
-import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import org.osmdroid.util.GeoPoint
@@ -135,6 +133,7 @@ class SegmentNetworkOverlay(
             if (segment.logicalSegmentId in selectedSegmentIds) return@forEach
             val segmentCompleted = completionStates[segment.logicalSegmentId] == true
             if (segmentCompleted != completed) return@forEach
+            if (!segmentIntersectsViewport(segment, mapView)) return@forEach
             drawPolyline(canvas, mapView, segment.geometry, paint)
         }
     }
@@ -142,6 +141,7 @@ class SegmentNetworkOverlay(
     private fun drawSelectedSegments(canvas: Canvas, mapView: MapView) {
         segments.forEach { segment ->
             if (segment.logicalSegmentId in selectedSegmentIds) {
+                if (!segmentIntersectsViewport(segment, mapView)) return@forEach
                 drawSelectedSegment(canvas, mapView, segment)
             }
         }
@@ -295,6 +295,24 @@ class SegmentNetworkOverlay(
         canvas.drawText("48px", x + 62f, y + 50f, debugTextPaint)
     }
 
+    private fun segmentIntersectsViewport(segment: StreetSegment, mapView: MapView): Boolean {
+        val box = mapView.boundingBox
+        val margin = viewportMarginDegrees(mapView.zoomLevelDouble)
+        val north = box.latNorth + margin
+        val south = box.latSouth - margin
+        val east = box.lonEast + margin
+        val west = box.lonWest - margin
+        return segment.geometry.any { coordinate ->
+            coordinate.latitude in south..north &&
+                coordinate.longitude in west..east
+        }
+    }
+
+    private fun viewportMarginDegrees(zoom: Double): Double {
+        val cityZoom = zoomBlend(zoom, start = 11.5, end = 15.0)
+        return 0.025 - (0.018 * cityZoom)
+    }
+
     private fun findNearestSegmentId(x: Float, y: Float, mapView: MapView): String? {
         var nearestId: String? = null
         var nearestDistance = HIT_TOLERANCE_PX
@@ -425,30 +443,6 @@ class CurrentLocationOverlay(
         val start = projection.toPixels(base, Point())
         val end = projection.toPixels(shifted, Point())
         return hypot((end.x - start.x).toDouble(), (end.y - start.y).toDouble()).toFloat()
-    }
-}
-
-class PinchZoomAmplifierOverlay(
-    private val extraZoomSensitivity: Double = 0.55
-) : Overlay() {
-    private var detector: ScaleGestureDetector? = null
-
-    override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
-        val scaleDetector = detector ?: ScaleGestureDetector(
-            mapView.context,
-            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
-                override fun onScale(detector: ScaleGestureDetector): Boolean {
-                    val extraZoom = ln(detector.scaleFactor.toDouble()) / ln(2.0) * extraZoomSensitivity
-                    if (extraZoom.isFinite() && kotlin.math.abs(extraZoom) > 0.001) {
-                        mapView.controller.zoomTo(mapView.zoomLevelDouble + extraZoom)
-                        mapView.invalidate()
-                    }
-                    return true
-                }
-            }
-        ).also { detector = it }
-        scaleDetector.onTouchEvent(event)
-        return false
     }
 }
 

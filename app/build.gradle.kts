@@ -15,8 +15,8 @@ android {
         applicationId = "com.jilanos.mappingparis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.3.2"
+        versionCode = 10
+        versionName = "0.3.3"
     }
 
     buildFeatures {
