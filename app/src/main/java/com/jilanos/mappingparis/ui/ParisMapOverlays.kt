@@ -5,6 +5,8 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Point
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import com.jilanos.mappingparis.data.LatLon
@@ -33,7 +35,7 @@ class SegmentNetworkOverlay(
     private val nextPoint = Point()
     private val basePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.STROKE
-        strokeCap = Paint.Cap.BUTT
+        strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
     private val selectedPaint = Paint(basePaint)
@@ -54,6 +56,7 @@ class SegmentNetworkOverlay(
         strokeWidth = 5f
         strokeCap = Paint.Cap.BUTT
     }
+    private val replaceXfermode = PorterDuffXfermode(PorterDuff.Mode.SRC)
 
     fun update(
         segments: List<StreetSegment>,
@@ -76,8 +79,8 @@ class SegmentNetworkOverlay(
     override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
         if (shadow) return
 
-        drawSegments(canvas, mapView, selectedOnly = false)
-        drawSegments(canvas, mapView, selectedOnly = true)
+        drawUnselectedSegments(canvas, mapView)
+        drawSelectedSegments(canvas, mapView)
         if (showDebugOverlay) drawDebugOverlay(canvas, mapView)
     }
 
@@ -95,26 +98,44 @@ class SegmentNetworkOverlay(
         return true
     }
 
-    private fun drawSegments(canvas: Canvas, mapView: MapView, selectedOnly: Boolean) {
+    private fun drawUnselectedSegments(canvas: Canvas, mapView: MapView) {
+        val layerId = canvas.saveLayer(
+            0f,
+            0f,
+            mapView.width.toFloat(),
+            mapView.height.toFloat(),
+            null
+        )
+        basePaint.xfermode = replaceXfermode
+        drawUnselectedSegmentGroup(canvas, mapView, completed = false)
+        drawUnselectedSegmentGroup(canvas, mapView, completed = true)
+        basePaint.xfermode = null
+        canvas.restoreToCount(layerId)
+    }
+
+    private fun drawUnselectedSegmentGroup(canvas: Canvas, mapView: MapView, completed: Boolean) {
+        val style = if (completed) {
+            completedStyle(mapView.zoomLevelDouble)
+        } else {
+            unvisitedStyle(mapView.zoomLevelDouble)
+        }
+        val paint = basePaint.apply {
+            color = style.color
+            strokeWidth = style.strokeWidth
+        }
         segments.forEach { segment ->
-            val logicalSelected = segment.logicalSegmentId in selectedSegmentIds
-            if (logicalSelected != selectedOnly) return@forEach
-
-            if (logicalSelected) {
-                drawSelectedSegment(canvas, mapView, segment)
-                return@forEach
-            }
-
-            val style = if (completionStates[segment.logicalSegmentId] == true) {
-                completedStyle(mapView.zoomLevelDouble)
-            } else {
-                unvisitedStyle(mapView.zoomLevelDouble)
-            }
-            val paint = basePaint.apply {
-                color = style.color
-                strokeWidth = style.strokeWidth
-            }
+            if (segment.logicalSegmentId in selectedSegmentIds) return@forEach
+            val segmentCompleted = completionStates[segment.logicalSegmentId] == true
+            if (segmentCompleted != completed) return@forEach
             drawPolyline(canvas, mapView, segment.geometry, paint)
+        }
+    }
+
+    private fun drawSelectedSegments(canvas: Canvas, mapView: MapView) {
+        segments.forEach { segment ->
+            if (segment.logicalSegmentId in selectedSegmentIds) {
+                drawSelectedSegment(canvas, mapView, segment)
+            }
         }
     }
 

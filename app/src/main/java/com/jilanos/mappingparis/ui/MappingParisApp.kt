@@ -193,7 +193,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.2.3.json")
+                            exportLauncher.launch("mapping-paris-completion-0.2.4.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },

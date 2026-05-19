@@ -22,6 +22,7 @@ class SegmentRepository(context: Context) {
             .bufferedReader()
             .use { it.readText() }
         return parser.parse(json)
+            .filter { it.lengthMeters >= MIN_VISIBLE_SEGMENT_LENGTH_METERS }
     }
 
     suspend fun setCompleted(segmentId: String, completed: Boolean) {
@@ -109,5 +110,9 @@ class SegmentRepository(context: Context) {
             migratedRows = logicalRowsToWrite.size,
             removedRows = rowsToRemove.size
         )
+    }
+
+    private companion object {
+        const val MIN_VISIBLE_SEGMENT_LENGTH_METERS = 20.0
     }
 }
