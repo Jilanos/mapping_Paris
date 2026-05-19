@@ -56,8 +56,78 @@ If a reused Gradle daemon hangs, run:
 The debug APK should be produced at:
 
 ```text
-app\build\outputs\apk\debug\app-debug.apk
+app\build\outputs\apk\debug\mapping-paris-<version>-debug.apk
 ```
+
+For example, version `0.3.2` produces:
+
+```text
+app\build\outputs\apk\debug\mapping-paris-0.3.2-debug.apk
+```
+
+## Build And Install Helper
+
+From the repository root:
+
+```powershell
+cmd /c tools\build-and-install-debug-apk.cmd
+```
+
+The helper:
+
+- builds the latest debug APK;
+- finds the newest `mapping-paris-*-debug.apk`;
+- lists connected ADB devices;
+- installs with `adb install -r`;
+- detects common ADB failures and prints the next action.
+
+## Signature Mismatch / Reinstall Required
+
+If install fails with:
+
+```text
+INSTALL_FAILED_UPDATE_INCOMPATIBLE
+```
+
+the phone already has `com.jilanos.mappingparis` installed with a different
+Android signing key. Android prevents replacing an installed app with an APK
+signed by another key, even if the package name is the same.
+
+Typical causes:
+
+- a previous debug APK was built from another machine;
+- the previous APK used another debug keystore;
+- the app was installed from another checkout or signing flow.
+
+The script does not uninstall automatically, because uninstalling removes local
+app data:
+
+- Room progression rows;
+- local settings;
+- any unexported progression.
+
+Safe recovery:
+
+1. If the existing app opens and contains useful progress, export the
+   progression from the app first.
+2. Uninstall the old package:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" uninstall com.jilanos.mappingparis
+```
+
+3. Rebuild and reinstall:
+
+```powershell
+cmd /c tools\build-and-install-debug-apk.cmd
+```
+
+If the device is listed as `unauthorized`, unlock the phone, accept the USB
+debugging authorization dialog, then rerun the helper.
+
+If ADB reports `no devices/emulators found`, connect the phone over USB, enable
+USB debugging in Android developer options, check `adb devices`, then rerun the
+helper.
 
 ## Last Validation
 
@@ -70,6 +140,7 @@ Executed:
 Result:
 
 - build successful;
-- debug APK produced at `app\build\outputs\apk\debug\app-debug.apk`;
+- debug APK produced at
+  `app\build\outputs\apk\debug\mapping-paris-<version>-debug.apk`;
 - APK signature verified with `apksigner`;
 - certificate CN: `Android Debug`.

@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -52,6 +53,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -101,6 +103,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
     var pendingImportJson by remember { mutableStateOf<String?>(null) }
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
     var showResetConfirmation by remember { mutableStateOf(false) }
+    var showBackgroundLocationSettingsPrompt by remember { mutableStateOf(false) }
 
     val exportLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.CreateDocument("application/json")
@@ -127,6 +130,14 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
         }
     }
 
+    val appSettingsLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) {
+        if (uiState.gpsAssistedEnabled && hasForegroundLocationPermission(context)) {
+            viewModel.onGpsLoading()
+        }
+    }
+
     val locationPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { grants ->
@@ -135,6 +146,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
         if (granted) {
             viewModel.setGpsAssistedEnabled(true)
             viewModel.onGpsLoading()
+            if (requiresManualBackgroundLocationPermission(context)) {
+                showBackgroundLocationSettingsPrompt = true
+            }
         } else {
             viewModel.onGpsPermissionDenied()
         }
@@ -156,6 +170,16 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
             viewModel.recenterOnCurrentLocation()
         } else {
             viewModel.onGpsLoading()
+        }
+    }
+
+    LaunchedEffect(Unit) {
+        val permissions = startupPermissionsToRequest(context)
+        if (permissions.isNotEmpty()) {
+            viewModel.setGpsAssistedEnabled(true)
+            locationPermissionLauncher.launch(permissions.toTypedArray())
+        } else if (requiresManualBackgroundLocationPermission(context)) {
+            showBackgroundLocationSettingsPrompt = true
         }
     }
 
@@ -253,7 +277,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.3.1.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.2.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -401,6 +425,38 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
             }
         )
     }
+
+    if (showBackgroundLocationSettingsPrompt) {
+        AlertDialog(
+            onDismissRequest = { showBackgroundLocationSettingsPrompt = false },
+            title = { Text("Autorisation GPS en arriere-plan") },
+            text = {
+                Text(
+                    "Pour continuer le suivi quand le telephone est verrouille, ouvre les reglages de l'app et autorise la localisation en arriere-plan si l'option est disponible."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showBackgroundLocationSettingsPrompt = false
+                        appSettingsLauncher.launch(
+                            Intent(
+                                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                                Uri.fromParts("package", context.packageName, null)
+                            )
+                        )
+                    }
+                ) {
+                    Text("Ouvrir reglages")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showBackgroundLocationSettingsPrompt = false }) {
+                    Text("Plus tard")
+                }
+            }
+        )
+    }
 }
 
 @Composable
@@ -469,6 +525,53 @@ private fun hasForegroundLocationPermission(context: Context): Boolean {
         Manifest.permission.ACCESS_COARSE_LOCATION
     ) == PackageManager.PERMISSION_GRANTED
     return fineGranted || coarseGranted
+}
+
+private fun hasNotificationPermission(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.POST_NOTIFICATIONS
+        ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun hasBackgroundLocationPermission(context: Context): Boolean {
+    return Build.VERSION.SDK_INT < Build.VERSION_CODES.Q ||
+        ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_BACKGROUND_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED
+}
+
+private fun requiresManualBackgroundLocationPermission(context: Context): Boolean {
+    return Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+        hasForegroundLocationPermission(context) &&
+        !hasBackgroundLocationPermission(context)
+}
+
+private fun startupPermissionsToRequest(context: Context): List<String> {
+    val permissions = mutableListOf<String>()
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_FINE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        permissions += Manifest.permission.ACCESS_FINE_LOCATION
+    }
+    if (ContextCompat.checkSelfPermission(
+            context,
+            Manifest.permission.ACCESS_COARSE_LOCATION
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        permissions += Manifest.permission.ACCESS_COARSE_LOCATION
+    }
+    if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && !hasBackgroundLocationPermission(context)) {
+        permissions += Manifest.permission.ACCESS_BACKGROUND_LOCATION
+    }
+    if (!hasNotificationPermission(context)) {
+        permissions += Manifest.permission.POST_NOTIFICATIONS
+    }
+    return permissions.distinct()
 }
 
 private fun gpsAvailabilityLabel(availability: GpsAvailability): String {

@@ -13,13 +13,14 @@ Branch: `main`
 The project is a local-first personal Android app plus PWA tester for manually
 tracking completed street segments in Paris intra-muros.
 
-Current latest pushed commit before GPS 0.3 work:
+Current latest pushed commit before the uncommitted 0.3.2 permission and install
+documentation work:
 
-- `9737c80 Document release 0.2.4`
+- `ee48151 Keep GPS tracking active when phone is locked`
 
 Generated APK available locally:
 
-- `app/build/outputs/apk/debug/mapping-paris-0.3.0-debug.apk`
+- `app/build/outputs/apk/debug/mapping-paris-0.3.2-debug.apk`
 
 Current datasets:
 
@@ -66,9 +67,10 @@ Key model decision:
 
 ## Version 0.3 GPS State
 
-- Android `versionName` is `0.3.0`.
-- Android `versionCode` is `7`.
-- Foreground location permissions are declared for fine and coarse location.
+- Android `versionName` is `0.3.2`.
+- Android `versionCode` is `9`.
+- Foreground, background, foreground-service-location, and notification
+  permissions are declared for the current GPS testing flow.
 - GPS-assisted behavior is stored in local settings and disabled by default on
   first install.
 - The map has an always-visible GPS button below the filter button.
@@ -79,13 +81,16 @@ Key model decision:
   chips and settings labels.
 - Settings includes GPS-assisted behavior plus strict, balanced, and wide
   matching strictness.
-- While GPS assistance is enabled and the app is open, path points are kept in
-  memory only.
+- While GPS assistance is enabled, a foreground service keeps location updates
+  active when the phone is locked.
 - GPS path matching proposes likely nearby logical segments conservatively.
 - GPS proposals are selected for review and use a distinct temporary style.
 - The user can deselect proposed segments before validation.
 - Segments are never completed automatically from GPS.
-- Captured GPS path data is discarded when the app closes.
+- Captured GPS path data is still local-only and is used only to propose
+  editable segment selections.
+- Startup permission prompting was added for 0.3.2. Android background location
+  may still require the user to use the app settings screen manually.
 
 ## Latest Mobile Feedback Implemented
 
@@ -180,13 +185,13 @@ node --check tools\dev-server.mjs
 APK verification:
 
 ```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\debug\mapping-paris-0.3.0-debug.apk
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\debug\mapping-paris-0.3.2-debug.apk
 ```
 
 APK asset inspection:
 
 ```powershell
-& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\aapt.exe" list app\build\outputs\apk\debug\mapping-paris-0.3.0-debug.apk
+& "$env:LOCALAPPDATA\Android\Sdk\build-tools\35.0.0\aapt.exe" list app\build\outputs\apk\debug\mapping-paris-0.3.2-debug.apk
 ```
 
 PWA local test:
@@ -223,14 +228,22 @@ http://localhost:5173/pwa/
   - Verified: `assets/paris_segments.geojson`, `assets/image-1-source.png`,
     and launcher resources are packaged.
 - `cmd /c tools\build-and-install-debug-apk.cmd`
-  - BUILD SUCCESSFUL for `mapping-paris-0.3.0-debug.apk`.
+  - BUILD SUCCESSFUL for `mapping-paris-0.3.2-debug.apk`.
   - Connected device: `37290DLJH004PP`.
   - Initial install blocked: `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
   - Existing installed package had a different signature.
-  - After user approval, the existing package was uninstalled and 0.3.0 was
+  - After user approval, the existing package was uninstalled and 0.3.2 was
     installed successfully.
-  - Follow-up GPS permission fix was rebuilt and installed successfully.
-  - Installed package confirmed: `versionName=0.3.0`, `versionCode=7`.
+  - Follow-up GPS permission prompt changes were rebuilt and installed
+    successfully.
+  - Installed package confirmed locally through the successful ADB install.
+- `tools/build-and-install-debug-apk.cmd`
+  - Now detects `INSTALL_FAILED_UPDATE_INCOMPATIBLE`.
+  - It explains that Android signing keys differ and does not uninstall
+    automatically.
+  - It warns that uninstalling deletes local Room progress, settings, and
+    unexported data.
+  - It prints the manual uninstall and reinstall commands.
 - `git diff --check`
   - OK after the 0.3 GPS changes, with only expected CRLF conversion warnings.
 
@@ -242,7 +255,7 @@ http://localhost:5173/pwa/
 - Walk with the app open and verify that GPS-proposed segments are conservative,
   editable, visually distinct, and not completed until explicit validation.
 - Check strict, balanced, and wide matching settings on real streets.
-- Re-run APK signature verification for `mapping-paris-0.3.0-debug.apk`.
+- Re-run APK signature verification for `mapping-paris-0.3.2-debug.apk`.
 - Check Boulevard Marguerite de Rochechouart and Boulevard de Clichy on device:
   parallel lanes should remain visible and linked as one logical block.
 - Check whether filtering visual segments shorter than 20 m removes too many
@@ -264,12 +277,14 @@ http://localhost:5173/pwa/
 ```text
 Je reprends le projet mapping_Paris. Lis docs/development/handoff-next-codex.md.
 
-Objectif immediat: tester le nouvel APK 0.3 sur mobile. Le dernier APK est
-app/build/outputs/apk/debug/mapping-paris-0.3.0-debug.apk. Verifie en priorite
+Objectif immediat: tester le nouvel APK 0.3.2 sur mobile. Le dernier APK est
+app/build/outputs/apk/debug/mapping-paris-0.3.2-debug.apk. Verifie en priorite
 le GPS: off par defaut, demande de permission, affichage position et rayon de
 precision, bouton recenter sans verrouiller la camera, et propositions de
 segments GPS editables/non validees. Verifie aussi light/blue mode, selection,
 validation manuelle, settings, search, filters, import/export et statistiques.
+Si ADB signale INSTALL_FAILED_UPDATE_INCOMPATIBLE, exporter la progression si
+possible, puis desinstaller com.jilanos.mappingparis et relancer l'installation.
 Verifie d'abord l'etat Git, puis travaille uniquement sur les retours de test
 mobile les plus recents.
 ```

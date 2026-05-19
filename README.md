@@ -58,12 +58,13 @@ The Android app can now:
 - recenter only when the GPS button is pressed;
 - keep GPS-assisted behavior disabled by default on first install;
 - expose GPS assistance and matching strictness in settings;
-- use the app-open GPS path to propose likely covered segments as editable
+- use the foreground GPS path to propose likely covered segments as editable
   selections;
 - keep final completion under explicit user control.
 
-GPS data stays local to the device. There is no closed-app background tracking,
-route upload, or automatic segment completion.
+GPS data stays local to the device. When GPS assistance is enabled, the app can
+keep tracking through a foreground service while the phone is locked. There is
+no automatic segment completion, no route upload, and no cloud sync.
 
 ## Segment Dataset
 
@@ -175,8 +176,33 @@ If a reused Gradle daemon hangs, use:
 Expected output:
 
 ```text
-app\build\outputs\apk\debug\mapping-paris-0.3.0-debug.apk
+app\build\outputs\apk\debug\mapping-paris-<version>-debug.apk
 ```
+
+### Debug Install And Signature Mismatch
+
+Use the local helper to build and install the latest debug APK on a connected
+Android device:
+
+```powershell
+cmd /c tools\build-and-install-debug-apk.cmd
+```
+
+If Android reports `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, the phone already has
+`com.jilanos.mappingparis` installed with a different signing key. This commonly
+happens when a previous debug APK was built from another machine, another
+checkout, or another debug keystore. Android will not update that app in place.
+
+Do not uninstall blindly if the app contains progress you want to keep. First
+open the app and export the progression. Then uninstall and reinstall:
+
+```powershell
+& "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe" uninstall com.jilanos.mappingparis
+cmd /c tools\build-and-install-debug-apk.cmd
+```
+
+Uninstalling deletes local Room data, settings, and any progression that has not
+been exported.
 
 ## Validation Commands
 
@@ -210,6 +236,6 @@ The current V1 does not target:
 - user accounts;
 - cloud sync;
 - automatic GPS validation;
-- background GPS tracking;
+- closed-app route history or cloud GPS tracking;
 - Play Store publication;
 - perfect GIS topology.
