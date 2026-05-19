@@ -6,10 +6,13 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.Point
 import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import com.jilanos.mappingparis.data.LatLon
 import com.jilanos.mappingparis.data.StreetSegment
+import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import org.osmdroid.util.GeoPoint
@@ -21,6 +24,7 @@ class SegmentNetworkOverlay(
     private var completionStates: Map<String, Boolean>,
     private var selectedSegmentIds: Set<String>,
     private var mapMode: MapMode,
+    private var showDebugOverlay: Boolean,
     private var onTapSegment: (String) -> Unit,
     private var onLongPressSegment: (String) -> Unit
 ) : Overlay() {
@@ -32,9 +36,23 @@ class SegmentNetworkOverlay(
         strokeCap = Paint.Cap.BUTT
         strokeJoin = Paint.Join.ROUND
     }
-    private val selectedPaint = Paint(basePaint).apply {
-        color = Color.argb(194, 19, 220, 179)
-        strokeWidth = 11f
+    private val selectedPaint = Paint(basePaint)
+    private val selectedHaloPaint = Paint(basePaint).apply {
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val debugTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 30f
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
+    }
+    private val debugBackgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(185, 7, 31, 72)
+        style = Paint.Style.FILL
+    }
+    private val debugRulerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.argb(230, 47, 243, 197)
+        strokeWidth = 5f
+        strokeCap = Paint.Cap.BUTT
     }
 
     fun update(
@@ -42,6 +60,7 @@ class SegmentNetworkOverlay(
         completionStates: Map<String, Boolean>,
         selectedSegmentIds: Set<String>,
         mapMode: MapMode,
+        showDebugOverlay: Boolean,
         onTapSegment: (String) -> Unit,
         onLongPressSegment: (String) -> Unit
     ) {
@@ -49,6 +68,7 @@ class SegmentNetworkOverlay(
         this.completionStates = completionStates
         this.selectedSegmentIds = selectedSegmentIds
         this.mapMode = mapMode
+        this.showDebugOverlay = showDebugOverlay
         this.onTapSegment = onTapSegment
         this.onLongPressSegment = onLongPressSegment
     }
@@ -58,6 +78,7 @@ class SegmentNetworkOverlay(
 
         drawSegments(canvas, mapView, selectedOnly = false)
         drawSegments(canvas, mapView, selectedOnly = true)
+        if (showDebugOverlay) drawDebugOverlay(canvas, mapView)
     }
 
     override fun onSingleTapConfirmed(event: MotionEvent, mapView: MapView): Boolean {
@@ -79,34 +100,109 @@ class SegmentNetworkOverlay(
             val logicalSelected = segment.logicalSegmentId in selectedSegmentIds
             if (logicalSelected != selectedOnly) return@forEach
 
-            val paint = if (logicalSelected) {
-                selectedPaint
+            if (logicalSelected) {
+                drawSelectedSegment(canvas, mapView, segment)
+                return@forEach
+            }
+
+            val style = if (completionStates[segment.logicalSegmentId] == true) {
+                completedStyle(mapView.zoomLevelDouble)
             } else {
-                basePaint.apply {
-                    color = if (completionStates[segment.logicalSegmentId] == true) {
-                        completedColor()
-                    } else {
-                        pendingColor()
-                    }
-                    strokeWidth = 9f
-                }
+                unvisitedStyle(mapView.zoomLevelDouble)
+            }
+            val paint = basePaint.apply {
+                color = style.color
+                strokeWidth = style.strokeWidth
             }
             drawPolyline(canvas, mapView, segment.geometry, paint)
         }
     }
 
-    private fun completedColor(): Int {
+    private fun drawSelectedSegment(canvas: Canvas, mapView: MapView, segment: StreetSegment) {
+        val style = selectedStyle(mapView.zoomLevelDouble)
+        selectedHaloPaint.apply {
+            color = style.haloColor
+            strokeWidth = style.haloWidth
+        }
+        drawPolyline(canvas, mapView, segment.geometry, selectedHaloPaint)
+
+        selectedPaint.apply {
+            color = style.color
+            strokeWidth = style.strokeWidth
+        }
+        drawPolyline(canvas, mapView, segment.geometry, selectedPaint)
+    }
+
+    private fun completedStyle(zoom: Double): SegmentPaintStyle {
+        val alpha = segmentOverlayAlpha(zoom)
+        val width = ribbonStrokeWidth(zoom)
         return when (mapMode) {
-            MapMode.LIGHT -> Color.argb(104, 16, 118, 93)
-            MapMode.BLUE -> Color.argb(148, 44, 242, 196)
+            MapMode.LIGHT -> SegmentPaintStyle(
+                color = Color.argb(alpha, 13, 139, 112),
+                strokeWidth = width
+            )
+            MapMode.BLUE -> SegmentPaintStyle(
+                color = Color.argb(alpha, 44, 242, 196),
+                strokeWidth = width
+            )
         }
     }
 
-    private fun pendingColor(): Int {
+    private fun unvisitedStyle(zoom: Double): SegmentPaintStyle {
+        val alpha = segmentOverlayAlpha(zoom)
+        val width = ribbonStrokeWidth(zoom)
         return when (mapMode) {
-            MapMode.LIGHT -> Color.argb(78, 178, 86, 77)
-            MapMode.BLUE -> Color.argb(92, 104, 132, 176)
+            MapMode.LIGHT -> SegmentPaintStyle(
+                color = Color.argb(alpha, 220, 54, 66),
+                strokeWidth = width
+            )
+            MapMode.BLUE -> SegmentPaintStyle(
+                color = Color.argb(alpha, 224, 70, 82),
+                strokeWidth = width
+            )
         }
+    }
+
+    private fun selectedStyle(zoom: Double): SegmentPaintStyle {
+        return when (mapMode) {
+            MapMode.LIGHT -> SegmentPaintStyle(
+                color = Color.argb(224, 114, 70, 230),
+                strokeWidth = segmentStrokeWidth(zoom, base = 7.6f, highZoom = 9.6f),
+                haloColor = Color.argb(150, 255, 255, 255),
+                haloWidth = segmentStrokeWidth(zoom, base = 12.2f, highZoom = 15.2f)
+            )
+            MapMode.BLUE -> SegmentPaintStyle(
+                color = Color.argb(232, 120, 232, 255),
+                strokeWidth = segmentStrokeWidth(zoom, base = 7.8f, highZoom = 9.8f),
+                haloColor = Color.argb(116, 7, 31, 72),
+                haloWidth = segmentStrokeWidth(zoom, base = 12.6f, highZoom = 15.6f)
+            )
+        }
+    }
+
+    private fun segmentStrokeWidth(zoom: Double, base: Float, highZoom: Float): Float {
+        val zoomFactor = zoomBlend(zoom, start = 12.5, end = 17.0)
+        return base + ((highZoom - base) * zoomFactor)
+    }
+
+    private fun ribbonStrokeWidth(zoom: Double): Float {
+        val cityZoom = zoomBlend(zoom, start = 12.5, end = 15.0)
+        val streetZoom = zoomBlend(zoom, start = 15.0, end = 18.0)
+        val closeZoom = zoomBlend(zoom, start = 18.0, end = 20.0)
+        return 7.0f + (16.0f * cityZoom) + (20.0f * streetZoom) + (10.0f * closeZoom)
+    }
+
+    private fun segmentOverlayAlpha(zoom: Double): Int {
+        val highZoomBlend = zoomBlend(zoom, start = 14.0, end = 18.5)
+        return lerpInt(62, 122, highZoomBlend)
+    }
+
+    private fun zoomBlend(zoom: Double, start: Double, end: Double): Float {
+        return ((zoom - start) / (end - start)).coerceIn(0.0, 1.0).toFloat()
+    }
+
+    private fun lerpInt(start: Int, end: Int, factor: Float): Int {
+        return (start + ((end - start) * factor)).toInt()
     }
 
     private fun drawPolyline(canvas: Canvas, mapView: MapView, geometry: List<LatLon>, paint: Paint) {
@@ -121,6 +217,17 @@ class SegmentNetworkOverlay(
             }
         }
         canvas.drawPath(path, paint)
+    }
+
+    private fun drawDebugOverlay(canvas: Canvas, mapView: MapView) {
+        val x = 24f
+        val y = mapView.height - 170f
+        canvas.drawRoundRect(x - 12f, y - 54f, x + 370f, y + 58f, 18f, 18f, debugBackgroundPaint)
+        val zoomLabel = String.format(Locale.US, "zoom %.2f", mapView.zoomLevelDouble)
+        canvas.drawText(zoomLabel, x, y - 18f, debugTextPaint)
+        canvas.drawText("${mapView.width} x ${mapView.height}px", x, y + 18f, debugTextPaint)
+        canvas.drawLine(x, y + 42f, x + 48f, y + 42f, debugRulerPaint)
+        canvas.drawText("48px", x + 62f, y + 50f, debugTextPaint)
     }
 
     private fun findNearestSegmentId(x: Float, y: Float, mapView: MapView): String? {
@@ -187,6 +294,37 @@ class SegmentNetworkOverlay(
 
     private companion object {
         const val HIT_TOLERANCE_PX = 28f
+    }
+
+    private data class SegmentPaintStyle(
+        val color: Int,
+        val strokeWidth: Float,
+        val haloColor: Int = Color.TRANSPARENT,
+        val haloWidth: Float = 0f
+    )
+}
+
+class PinchZoomAmplifierOverlay(
+    private val extraZoomSensitivity: Double = 0.55
+) : Overlay() {
+    private var detector: ScaleGestureDetector? = null
+
+    override fun onTouchEvent(event: MotionEvent, mapView: MapView): Boolean {
+        val scaleDetector = detector ?: ScaleGestureDetector(
+            mapView.context,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val extraZoom = ln(detector.scaleFactor.toDouble()) / ln(2.0) * extraZoomSensitivity
+                    if (extraZoom.isFinite() && kotlin.math.abs(extraZoom) > 0.001) {
+                        mapView.controller.zoomTo(mapView.zoomLevelDouble + extraZoom)
+                        mapView.invalidate()
+                    }
+                    return true
+                }
+            }
+        ).also { detector = it }
+        scaleDetector.onTouchEvent(event)
+        return false
     }
 }
 

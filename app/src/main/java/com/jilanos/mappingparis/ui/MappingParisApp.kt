@@ -1,5 +1,6 @@
 package com.jilanos.mappingparis.ui
 
+import android.content.Context
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -15,8 +16,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -27,6 +30,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.ElevatedButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -82,6 +86,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
     val snackbarHostState = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val versionLabel = remember { appVersionLabel(context) }
     var activePanel by remember { mutableStateOf(OverlayPanel.NONE) }
     var pendingImportJson by remember { mutableStateOf<String?>(null) }
     var pendingExportJson by remember { mutableStateOf<String?>(null) }
@@ -121,21 +126,25 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     selectedSegmentIds = uiState.selectedSegmentIds,
                     mapMode = uiState.mapMode,
                     mapFocus = uiState.mapFocus,
+                    showDebugOverlay = uiState.showMapDebugOverlay,
                     onSelectSegment = viewModel::selectSegment,
                     onLongPressSegment = viewModel::addSegmentToSelection,
                     modifier = Modifier.fillMaxSize()
                 )
 
-                MapTopControls(
-                    activePanel = activePanel,
-                    filterActive = uiState.filter.isActive,
-                    onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
-                    onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
-                    onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .zIndex(20f)
-                )
+                if (activePanel != OverlayPanel.SETTINGS && activePanel != OverlayPanel.STATS) {
+                    MapTopControls(
+                        activePanel = activePanel,
+                        filterActive = uiState.filter.isActive,
+                        onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
+                        onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
+                        onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                            .zIndex(20f)
+                    )
+                }
 
                 when (activePanel) {
                     OverlayPanel.MENU -> MainMenu(
@@ -146,6 +155,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.TopStart)
+                            .statusBarsPadding()
                             .padding(start = 16.dp, top = 72.dp, end = 16.dp)
                             .zIndex(19f)
                     )
@@ -161,6 +171,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.TopCenter)
+                            .statusBarsPadding()
                             .padding(start = 16.dp, top = 72.dp, end = 16.dp)
                             .zIndex(19f)
                     )
@@ -173,6 +184,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.TopEnd)
+                            .statusBarsPadding()
                             .padding(start = 16.dp, top = 72.dp, end = 16.dp)
                             .zIndex(19f)
                     )
@@ -181,16 +193,27 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.2.1.json")
+                            exportLauncher.launch("mapping-paris-completion-0.2.3.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
-                        onReset = { showResetConfirmation = true }
+                        onReset = { showResetConfirmation = true },
+                        showDebugOverlay = uiState.showMapDebugOverlay,
+                        onDebugOverlayChange = viewModel::setMapDebugOverlayEnabled,
+                        versionLabel = versionLabel,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
+                            .padding(16.dp)
+                            .zIndex(19f)
                     )
 
                     OverlayPanel.STATS -> StatsView(
                         globalStats = uiState.globalStats,
                         arrondissementStats = uiState.arrondissementStats,
-                        onClose = { activePanel = OverlayPanel.MENU }
+                        onClose = { activePanel = OverlayPanel.MENU },
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .zIndex(19f)
                     )
 
                     OverlayPanel.NONE -> Unit
@@ -220,7 +243,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                             }
                         },
                         onClearSelection = viewModel::clearSelection,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .navigationBarsPadding()
                     )
                 }
 
@@ -229,6 +254,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .padding(12.dp)
+                        .navigationBarsPadding()
                         .zIndex(30f),
                     snackbar = { data -> MappingParisSnackbar(data) }
                 )
@@ -562,7 +588,7 @@ private fun FilterPanel(
     Card(modifier = modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp).verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -572,40 +598,46 @@ private fun FilterPanel(
                 Text("Filtres", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 TextButton(onClick = onClose) { Text("Fermer") }
             }
-            FilterCheckbox(
-                checked = filter.showCompleted,
-                label = "Parcourus",
-                onCheckedChange = { onFilterChange(filter.copy(showCompleted = it)) }
-            )
-            FilterCheckbox(
-                checked = filter.showNotCompleted,
-                label = "Non parcourus",
-                onCheckedChange = { onFilterChange(filter.copy(showNotCompleted = it)) }
-            )
-            FilterCheckbox(
-                checked = filter.showSelected,
-                label = "Selection",
-                onCheckedChange = { onFilterChange(filter.copy(showSelected = it)) }
-            )
-            OutlinedTextField(
-                value = filter.arrondissement,
-                onValueChange = { onFilterChange(filter.copy(arrondissement = it.filter(Char::isDigit).take(2))) },
-                singleLine = true,
-                label = { Text("Arrondissement") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = filter.streetQuery,
-                onValueChange = { onFilterChange(filter.copy(streetQuery = it)) },
-                singleLine = true,
-                label = { Text("Rue") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            if (arrondissements.isNotEmpty()) {
-                Text(
-                    "Arrondissements: ${arrondissements.joinToString(", ")}",
-                    style = MaterialTheme.typography.bodySmall
+            Text("Statut", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                FilterCheckbox(
+                    checked = filter.showCompleted,
+                    label = "Parcourus",
+                    onCheckedChange = { onFilterChange(filter.copy(showCompleted = it)) }
                 )
+                FilterCheckbox(
+                    checked = filter.showNotCompleted,
+                    label = "Non parcourus",
+                    onCheckedChange = { onFilterChange(filter.copy(showNotCompleted = it)) }
+                )
+                FilterCheckbox(
+                    checked = filter.showSelected,
+                    label = "Selection",
+                    onCheckedChange = { onFilterChange(filter.copy(showSelected = it)) }
+                )
+            }
+            Text("Arrondissements", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+            val arrondissementOptions = (1..20).map { it.toString() }
+            arrondissementOptions.chunked(5).forEach { rowItems ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    rowItems.forEach { arrondissement ->
+                        CompactArrondissementCheckbox(
+                            arrondissement = arrondissement,
+                            checked = arrondissement in filter.arrondissements,
+                            onCheckedChange = { checked ->
+                                val next = if (checked) {
+                                    filter.arrondissements + arrondissement
+                                } else {
+                                    filter.arrondissements - arrondissement
+                                }
+                                onFilterChange(filter.copy(arrondissements = next))
+                            }
+                        )
+                    }
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onClear) { Text("Effacer") }
@@ -628,25 +660,51 @@ private fun FilterCheckbox(
 }
 
 @Composable
+private fun CompactArrondissementCheckbox(
+    arrondissement: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
+        Text(arrondissement, style = MaterialTheme.typography.bodyMedium)
+    }
+}
+
+@Composable
 private fun SettingsView(
     onClose: () -> Unit,
     onExport: () -> Unit,
     onImport: () -> Unit,
-    onReset: () -> Unit
+    onReset: () -> Unit,
+    showDebugOverlay: Boolean,
+    onDebugOverlayChange: (Boolean) -> Unit,
+    versionLabel: String,
+    modifier: Modifier = Modifier
 ) {
-    Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color.White
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            HeaderRow(title = "Parametres", onClose = onClose)
-            Text("Progression locale", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            HeaderRow(title = "Progression locale", onClose = onClose)
             Button(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Exporter la progression") }
             OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer la progression") }
             OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Reinitialiser la progression") }
+            FilterCheckbox(
+                checked = showDebugOverlay,
+                label = "Reperes zoom carte",
+                onCheckedChange = onDebugOverlayChange
+            )
+            Text(
+                versionLabel,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF6E7885),
+                modifier = Modifier.align(Alignment.End)
+            )
         }
     }
 }
@@ -655,42 +713,111 @@ private fun SettingsView(
 private fun StatsView(
     globalStats: CompletionStats,
     arrondissementStats: Map<String, CompletionStats>,
-    onClose: () -> Unit
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     Surface(
-        modifier = Modifier.fillMaxSize(),
-        color = Color.White
+        modifier = modifier.fillMaxSize(),
+        color = Color(0xFFF3F7FA)
     ) {
         Column(
-            modifier = Modifier.fillMaxSize().padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             HeaderRow(title = "Statistiques", onClose = onClose)
-            Text(
-                "Global: ${formatMeters(globalStats.completedMeters)} / ${formatMeters(globalStats.totalMeters)} (${formatPercent(globalStats.percent)})",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                "Restant: ${formatMeters((globalStats.totalMeters - globalStats.completedMeters).coerceAtLeast(0.0))}",
-                style = MaterialTheme.typography.bodyMedium
-            )
+            StatsSummaryCard(globalStats)
+            Text("Par arrondissement", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Column(
-                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                arrondissementStats.forEach { (arrondissement, stats) ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(arrondissement)
-                        Text("${formatMeters(stats.completedMeters)} / ${formatMeters(stats.totalMeters)}")
-                        Text(formatPercent(stats.percent))
+                arrondissementStats
+                    .toList()
+                    .sortedBy { (arrondissement, _) -> arrondissement.toIntOrNull() ?: 999 }
+                    .forEach { (arrondissement, stats) ->
+                        ArrondissementStatsRow(arrondissement = arrondissement, stats = stats)
                     }
-                }
             }
         }
+    }
+}
+
+@Composable
+private fun StatsSummaryCard(stats: CompletionStats) {
+    Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Global", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                Text(formatPercent(stats.percent), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            }
+            LinearProgressIndicator(
+                progress = { (stats.percent / 100.0).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp),
+                color = Color(0xFF0D8B70),
+                trackColor = Color(0xFFD9E3EA)
+            )
+            Text(
+                "${formatMeters(stats.completedMeters)} / ${formatMeters(stats.totalMeters)}",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Text(
+                "Restant: ${formatMeters((stats.totalMeters - stats.completedMeters).coerceAtLeast(0.0))}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF52606D)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ArrondissementStatsRow(arrondissement: String, stats: CompletionStats) {
+    Card(shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("${arrondissement}e", fontWeight = FontWeight.SemiBold)
+                Text(formatPercent(stats.percent), fontWeight = FontWeight.SemiBold)
+            }
+            LinearProgressIndicator(
+                progress = { (stats.percent / 100.0).toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(5.dp),
+                color = Color(0xFF0D8B70),
+                trackColor = Color(0xFFE0E7EC)
+            )
+            Text(
+                "${formatMeters(stats.completedMeters)} / ${formatMeters(stats.totalMeters)}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF52606D)
+            )
+        }
+    }
+}
+
+private fun appVersionLabel(context: Context): String {
+    return try {
+        val packageInfo = context.packageManager.getPackageInfo(context.packageName, 0)
+        val versionName = packageInfo.versionName ?: "unknown"
+        val versionCode = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toLong()
+        }
+        "Version $versionName, build $versionCode"
+    } catch (_: Exception) {
+        "Version inconnue"
     }
 }
 
@@ -763,18 +890,21 @@ private fun SegmentMap(
     selectedSegmentIds: Set<String>,
     mapMode: MapMode,
     mapFocus: MapFocus?,
+    showDebugOverlay: Boolean,
     onSelectSegment: (String) -> Unit,
     onLongPressSegment: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     AndroidView(
-        modifier = modifier,
+        modifier = modifier.navigationBarsPadding(),
         factory = {
             MapView(context).apply {
                 setTileSource(CartoLightTileSource)
                 setMultiTouchControls(true)
+                isTilesScaledToDpi = true
                 setUseDataConnection(true)
+                setPadding(0, 0, 0, 96)
                 controller.setZoom(13.2)
                 controller.setCenter(GeoPoint(48.8566, 2.3522))
                 val basemapOverlay = ParisBasemapOverlay()
@@ -783,10 +913,13 @@ private fun SegmentMap(
                     completionStates = completionStates,
                     selectedSegmentIds = selectedSegmentIds,
                     mapMode = mapMode,
+                    showDebugOverlay = showDebugOverlay,
                     onTapSegment = onSelectSegment,
                     onLongPressSegment = onLongPressSegment
                 )
+                val pinchZoomAmplifierOverlay = PinchZoomAmplifierOverlay()
                 overlays.add(segmentOverlay)
+                overlays.add(pinchZoomAmplifierOverlay)
                 tag = SegmentMapOverlayHolder(segmentOverlay, basemapOverlay)
             }
         },
@@ -805,6 +938,7 @@ private fun SegmentMap(
                 completionStates = completionStates,
                 selectedSegmentIds = selectedSegmentIds,
                 mapMode = mapMode,
+                showDebugOverlay = showDebugOverlay,
                 onTapSegment = onSelectSegment,
                 onLongPressSegment = onLongPressSegment
             )

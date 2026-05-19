@@ -37,12 +37,11 @@ data class SegmentFilter(
     val showCompleted: Boolean = false,
     val showNotCompleted: Boolean = false,
     val showSelected: Boolean = false,
-    val arrondissement: String = "",
-    val streetQuery: String = ""
+    val arrondissements: Set<String> = emptySet()
 ) {
     val isActive: Boolean
         get() = showCompleted || showNotCompleted || showSelected ||
-            arrondissement.isNotBlank() || streetQuery.isNotBlank()
+            arrondissements.isNotEmpty()
 }
 
 data class StreetSearchResult(
@@ -67,7 +66,8 @@ data class MappingParisUiState(
     val filter: SegmentFilter = SegmentFilter(),
     val searchQuery: String = "",
     val mapFocus: MapFocus? = null,
-    val migrationSummary: String? = null
+    val migrationSummary: String? = null,
+    val showMapDebugOverlay: Boolean = false
 ) {
     val selectedSegments: List<StreetSegment>
         get() = segments
@@ -103,7 +103,6 @@ data class MappingParisUiState(
     val visibleSegments: List<StreetSegment>
         get() {
             if (!filter.isActive) return segments
-            val normalizedStreetQuery = normalize(filter.streetQuery)
             val applyCompletionFilter = filter.showCompleted xor filter.showNotCompleted
             return segments.filter { segment ->
                 val completed = completionStates[segment.logicalSegmentId] == true
@@ -111,11 +110,9 @@ data class MappingParisUiState(
                     (filter.showCompleted && completed) ||
                     (filter.showNotCompleted && !completed)
                 val selectedOk = !filter.showSelected || segment.logicalSegmentId in selectedSegmentIds
-                val arrondissementOk = filter.arrondissement.isBlank() ||
-                    segment.arrondissement == filter.arrondissement
-                val streetOk = normalizedStreetQuery.isBlank() ||
-                    normalize(segment.streetName).contains(normalizedStreetQuery)
-                completionOk && selectedOk && arrondissementOk && streetOk
+                val arrondissementOk = filter.arrondissements.isEmpty() ||
+                    segment.arrondissement in filter.arrondissements
+                completionOk && selectedOk && arrondissementOk
             }
         }
 
@@ -171,6 +168,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private val searchQuery = MutableStateFlow("")
     private val mapFocus = MutableStateFlow<MapFocus?>(null)
     private val migrationSummary = MutableStateFlow<String?>(null)
+    private val showMapDebugOverlay = MutableStateFlow(false)
     private val segments = MutableStateFlow(repository.loadSegments())
     private var focusCounter = 0
 
@@ -183,7 +181,8 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             filter,
             searchQuery,
             mapFocus,
-            migrationSummary
+            migrationSummary,
+            showMapDebugOverlay
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             MappingParisUiState(
@@ -194,7 +193,8 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 filter = values[4] as SegmentFilter,
                 searchQuery = values[5] as String,
                 mapFocus = values[6] as MapFocus?,
-                migrationSummary = values[7] as String?
+                migrationSummary = values[7] as String?,
+                showMapDebugOverlay = values[8] as Boolean
             )
         }.stateIn(
             scope = viewModelScope,
@@ -247,6 +247,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         mapMode.value = mode
     }
 
+    fun setMapDebugOverlayEnabled(enabled: Boolean) {
+        showMapDebugOverlay.value = enabled
+    }
+
     fun updateFilter(newFilter: SegmentFilter) {
         filter.value = newFilter
     }
@@ -272,7 +276,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.2.0")
+            .put("appVersion", "0.2.3")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
