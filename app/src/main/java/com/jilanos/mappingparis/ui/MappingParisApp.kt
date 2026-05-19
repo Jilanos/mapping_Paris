@@ -1,12 +1,13 @@
 package com.jilanos.mappingparis.ui
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
-import android.location.Location
-import android.location.LocationListener
-import android.location.LocationManager
 import android.net.Uri
+import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
@@ -68,9 +69,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
+import androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
+import com.jilanos.mappingparis.location.GpsTrackingService
 import java.util.Locale
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -250,7 +253,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.2.4.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.1.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -411,46 +414,46 @@ private fun ForegroundLocationTracker(
     val context = LocalContext.current
     DisposableEffect(enabled, permissionGranted) {
         if (!enabled || !permissionGranted) {
+            GpsTrackingService.stop(context)
             onDispose { }
         } else {
-            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
-            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
-                .filter { provider ->
-                    runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false)
-                }
-            if (providers.isEmpty()) {
-                onUnavailable()
-                onDispose { }
-            } else {
-                onLoading()
-                val listener = LocationListener { location: Location ->
-                    onLocation(location.latitude, location.longitude, location.accuracy.takeIf { location.hasAccuracy() })
-                }
-                var requestStarted = false
-                providers.forEach { provider ->
-                    val started = runCatching {
-                        @Suppress("MissingPermission")
-                        locationManager.requestLocationUpdates(
-                            provider,
-                            2_500L,
-                            5f,
-                            listener
-                        )
-                    }.isSuccess
-                    requestStarted = requestStarted || started
-                    runCatching {
-                        @Suppress("MissingPermission")
-                        locationManager.getLastKnownLocation(provider)
-                    }.getOrNull()?.let { location ->
-                        onLocation(location.latitude, location.longitude, location.accuracy.takeIf { location.hasAccuracy() })
+            onLoading()
+            GpsTrackingService.consumePersistedLocations(context).forEach { location ->
+                onLocation(location.latitude, location.longitude, location.accuracyMeters)
+            }
+            val receiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context, intent: Intent) {
+                    when (intent.action) {
+                        GpsTrackingService.ACTION_LOCATION_UPDATE -> {
+                            val accuracy = intent.getFloatExtra(GpsTrackingService.EXTRA_ACCURACY, -1f)
+                                .takeIf { it >= 0f }
+                            onLocation(
+                                intent.getDoubleExtra(GpsTrackingService.EXTRA_LATITUDE, 0.0),
+                                intent.getDoubleExtra(GpsTrackingService.EXTRA_LONGITUDE, 0.0),
+                                accuracy
+                            )
+                        }
+                        GpsTrackingService.ACTION_LOCATION_AVAILABILITY -> {
+                            if (!intent.getBooleanExtra(GpsTrackingService.EXTRA_AVAILABLE, false)) {
+                                onUnavailable()
+                            }
+                        }
                     }
                 }
-                if (!requestStarted) {
-                    onUnavailable()
-                }
-                onDispose {
-                    locationManager.removeUpdates(listener)
-                }
+            }
+            val filter = IntentFilter().apply {
+                addAction(GpsTrackingService.ACTION_LOCATION_UPDATE)
+                addAction(GpsTrackingService.ACTION_LOCATION_AVAILABILITY)
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                context.registerReceiver(receiver, filter, RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("DEPRECATION")
+                context.registerReceiver(receiver, filter)
+            }
+            GpsTrackingService.start(context)
+            onDispose {
+                context.unregisterReceiver(receiver)
             }
         }
     }
