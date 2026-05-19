@@ -9,8 +9,8 @@ The project deliberately keeps three things separate:
 - the user's completion or validation state;
 - the Android app and local PWA inspection tooling.
 
-There is no backend, no account system, no GPS validation, and no cloud sync in
-the current scope.
+There is no backend, no account system, no automatic GPS validation, and no
+cloud sync in the current scope.
 
 ## Current State
 
@@ -45,6 +45,25 @@ project visuals.
 | Selection | Statistics |
 | --- | --- |
 | ![Android 0.2 selected segments](docs/assets/readme/android-0-2-selection.png) | ![Android 0.2 statistics](docs/assets/readme/android-0-2-stats.png) |
+
+## Version 0.3 GPS Preview
+
+Version 0.3 adds foreground GPS assistance to the Android app while keeping the
+project local-first and manual-first.
+
+The Android app can now:
+
+- request foreground location permission when GPS is used;
+- show the current position and accuracy radius on the map;
+- recenter only when the GPS button is pressed;
+- keep GPS-assisted behavior disabled by default on first install;
+- expose GPS assistance and matching strictness in settings;
+- use the app-open GPS path to propose likely covered segments as editable
+  selections;
+- keep final completion under explicit user control.
+
+GPS data stays local to the device. There is no closed-app background tracking,
+route upload, or automatic segment completion.
 
 ## Segment Dataset
 
@@ -156,7 +175,7 @@ If a reused Gradle daemon hangs, use:
 Expected output:
 
 ```text
-app\build\outputs\apk\debug\mapping-paris-0.2.0-debug.apk
+app\build\outputs\apk\debug\mapping-paris-0.3.0-debug.apk
 ```
 
 ## Validation Commands
@@ -190,6 +209,7 @@ The current V1 does not target:
 - backend services;
 - user accounts;
 - cloud sync;
-- GPS validation;
+- automatic GPS validation;
+- background GPS tracking;
 - Play Store publication;
 - perfect GIS topology.

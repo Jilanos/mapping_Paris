@@ -1,9 +1,11 @@
 package com.jilanos.mappingparis.ui
 
 import android.app.Application
+import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.jilanos.mappingparis.data.CompletionStats
+import com.jilanos.mappingparis.data.LatLon
 import com.jilanos.mappingparis.data.SegmentRepository
 import com.jilanos.mappingparis.data.StreetSegment
 import com.jilanos.mappingparis.data.completionStats
@@ -11,6 +13,8 @@ import com.jilanos.mappingparis.data.completionStatsByArrondissement
 import com.jilanos.mappingparis.data.logicalRepresentatives
 import java.text.Normalizer
 import java.time.Instant
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -32,6 +36,26 @@ data class MapFocus(
     val longitude: Double,
     val zoom: Double = 16.0
 )
+
+data class UserLocation(
+    val latitude: Double,
+    val longitude: Double,
+    val accuracyMeters: Float?
+)
+
+enum class GpsAvailability {
+    OFF,
+    LOADING,
+    READY,
+    PERMISSION_DENIED,
+    UNAVAILABLE
+}
+
+enum class GpsMatchingStrictness(val label: String, val maxDistanceMeters: Double) {
+    STRICT("18 m", 18.0),
+    BALANCED("28 m", 28.0),
+    WIDE("42 m", 42.0)
+}
 
 data class SegmentFilter(
     val showCompleted: Boolean = false,
@@ -67,7 +91,12 @@ data class MappingParisUiState(
     val searchQuery: String = "",
     val mapFocus: MapFocus? = null,
     val migrationSummary: String? = null,
-    val showMapDebugOverlay: Boolean = false
+    val showMapDebugOverlay: Boolean = false,
+    val gpsAssistedEnabled: Boolean = false,
+    val gpsAvailability: GpsAvailability = GpsAvailability.OFF,
+    val gpsMatchingStrictness: GpsMatchingStrictness = GpsMatchingStrictness.BALANCED,
+    val currentLocation: UserLocation? = null,
+    val gpsProposedSegmentIds: Set<String> = emptySet()
 ) {
     val selectedSegments: List<StreetSegment>
         get() = segments
@@ -162,6 +191,7 @@ data class MappingParisUiState(
 
 class MappingParisViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = SegmentRepository(application)
+    private val preferences = application.getSharedPreferences("mapping-paris-settings", Context.MODE_PRIVATE)
     private val selectedSegmentIds = MutableStateFlow<Set<String>>(emptySet())
     private val mapMode = MutableStateFlow(MapMode.LIGHT)
     private val filter = MutableStateFlow(SegmentFilter())
@@ -169,7 +199,20 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private val mapFocus = MutableStateFlow<MapFocus?>(null)
     private val migrationSummary = MutableStateFlow<String?>(null)
     private val showMapDebugOverlay = MutableStateFlow(false)
+    private val gpsAssistedEnabled = MutableStateFlow(preferences.getBoolean(KEY_GPS_ASSISTED_ENABLED, false))
+    private val gpsAvailability = MutableStateFlow(
+        if (gpsAssistedEnabled.value) GpsAvailability.LOADING else GpsAvailability.OFF
+    )
+    private val gpsMatchingStrictness = MutableStateFlow(
+        GpsMatchingStrictness.entries.firstOrNull {
+            it.name == preferences.getString(KEY_GPS_MATCHING_STRICTNESS, null)
+        } ?: GpsMatchingStrictness.BALANCED
+    )
+    private val currentLocation = MutableStateFlow<UserLocation?>(null)
+    private val gpsProposedSegmentIds = MutableStateFlow<Set<String>>(emptySet())
     private val segments = MutableStateFlow(repository.loadSegments())
+    private val gpsPath = mutableListOf<LatLon>()
+    private val dismissedGpsProposalIds = mutableSetOf<String>()
     private var focusCounter = 0
 
     val uiState: StateFlow<MappingParisUiState> =
@@ -182,7 +225,12 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             searchQuery,
             mapFocus,
             migrationSummary,
-            showMapDebugOverlay
+            showMapDebugOverlay,
+            gpsAssistedEnabled,
+            gpsAvailability,
+            gpsMatchingStrictness,
+            currentLocation,
+            gpsProposedSegmentIds
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             MappingParisUiState(
@@ -194,7 +242,12 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 searchQuery = values[5] as String,
                 mapFocus = values[6] as MapFocus?,
                 migrationSummary = values[7] as String?,
-                showMapDebugOverlay = values[8] as Boolean
+                showMapDebugOverlay = values[8] as Boolean,
+                gpsAssistedEnabled = values[9] as Boolean,
+                gpsAvailability = values[10] as GpsAvailability,
+                gpsMatchingStrictness = values[11] as GpsMatchingStrictness,
+                currentLocation = values[12] as UserLocation?,
+                gpsProposedSegmentIds = values[13] as Set<String>
             )
         }.stateIn(
             scope = viewModelScope,
@@ -217,6 +270,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         selectedSegmentIds.update { current ->
             if (logicalSegmentId in current) current - logicalSegmentId else current + logicalSegmentId
         }
+        if (logicalSegmentId in gpsProposedSegmentIds.value) {
+            dismissedGpsProposalIds += logicalSegmentId
+            gpsProposedSegmentIds.update { it - logicalSegmentId }
+        }
     }
 
     fun addSegmentToSelection(segmentId: String) {
@@ -226,6 +283,8 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
 
     fun clearSelection() {
         selectedSegmentIds.update { emptySet() }
+        gpsProposedSegmentIds.update { emptySet() }
+        dismissedGpsProposalIds.clear()
     }
 
     fun setSelectedCompletion(completed: Boolean) {
@@ -249,6 +308,67 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
 
     fun setMapDebugOverlayEnabled(enabled: Boolean) {
         showMapDebugOverlay.value = enabled
+    }
+
+    fun setGpsAssistedEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_GPS_ASSISTED_ENABLED, enabled).apply()
+        gpsAssistedEnabled.value = enabled
+        if (enabled) {
+            gpsAvailability.value = GpsAvailability.LOADING
+        } else {
+            gpsAvailability.value = GpsAvailability.OFF
+            currentLocation.value = null
+            gpsPath.clear()
+            dismissedGpsProposalIds.clear()
+            gpsProposedSegmentIds.value = emptySet()
+        }
+    }
+
+    fun setGpsMatchingStrictness(strictness: GpsMatchingStrictness) {
+        preferences.edit().putString(KEY_GPS_MATCHING_STRICTNESS, strictness.name).apply()
+        gpsMatchingStrictness.value = strictness
+        rebuildGpsProposals()
+    }
+
+    fun onGpsPermissionDenied() {
+        gpsAvailability.value = GpsAvailability.PERMISSION_DENIED
+        currentLocation.value = null
+    }
+
+    fun onGpsUnavailable() {
+        gpsAvailability.value = GpsAvailability.UNAVAILABLE
+        currentLocation.value = null
+    }
+
+    fun onGpsLoading() {
+        if (gpsAssistedEnabled.value) gpsAvailability.value = GpsAvailability.LOADING
+    }
+
+    fun onLocationUpdate(latitude: Double, longitude: Double, accuracyMeters: Float?) {
+        if (!gpsAssistedEnabled.value) return
+        currentLocation.value = UserLocation(latitude, longitude, accuracyMeters)
+        gpsAvailability.value = GpsAvailability.READY
+        val point = LatLon(latitude, longitude)
+        val previous = gpsPath.lastOrNull()
+        if (previous == null || distanceMeters(previous, point) >= GPS_PATH_MIN_STEP_METERS) {
+            gpsPath += point
+            rebuildGpsProposals()
+        }
+    }
+
+    fun recenterOnCurrentLocation() {
+        val location = currentLocation.value
+        if (location == null) {
+            gpsAvailability.value = if (gpsAssistedEnabled.value) GpsAvailability.LOADING else GpsAvailability.OFF
+            return
+        }
+        focusCounter += 1
+        mapFocus.value = MapFocus(
+            key = focusCounter,
+            latitude = location.latitude,
+            longitude = location.longitude,
+            zoom = 17.0
+        )
     }
 
     fun updateFilter(newFilter: SegmentFilter) {
@@ -276,7 +396,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.2.4")
+            .put("appVersion", "0.3.0")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
@@ -326,4 +446,80 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private fun logicalIdFor(segmentId: String): String {
         return segments.value.firstOrNull { it.id == segmentId }?.logicalSegmentId ?: segmentId
     }
+
+    private fun rebuildGpsProposals() {
+        if (!gpsAssistedEnabled.value || gpsPath.isEmpty()) {
+            gpsProposedSegmentIds.value = emptySet()
+            return
+        }
+
+        val previousProposals = gpsProposedSegmentIds.value
+        val maxDistance = gpsMatchingStrictness.value.maxDistanceMeters
+        val proposed = segments.value
+            .logicalRepresentatives()
+            .filter { segment ->
+                completionStatesSnapshot()[segment.logicalSegmentId] != true &&
+                    segment.logicalSegmentId !in dismissedGpsProposalIds &&
+                    segment.geometry.size >= 2 &&
+                    gpsPath.any { point -> distanceToPolylineMeters(point, segment.geometry) <= maxDistance }
+            }
+            .map { it.logicalSegmentId }
+            .toSet()
+
+        gpsProposedSegmentIds.value = proposed
+        selectedSegmentIds.update { current -> (current - previousProposals) + proposed }
+    }
+
+    private fun completionStatesSnapshot(): Map<String, Boolean> = uiState.value.completionStates
+
+    override fun onCleared() {
+        gpsPath.clear()
+        dismissedGpsProposalIds.clear()
+        super.onCleared()
+    }
+
+    private companion object {
+        const val KEY_GPS_ASSISTED_ENABLED = "gps_assisted_enabled"
+        const val KEY_GPS_MATCHING_STRICTNESS = "gps_matching_strictness"
+        const val GPS_PATH_MIN_STEP_METERS = 12.0
+    }
+}
+
+private fun distanceToPolylineMeters(point: LatLon, geometry: List<LatLon>): Double {
+    var nearest = Double.POSITIVE_INFINITY
+    for (index in 0 until geometry.lastIndex) {
+        nearest = minOf(nearest, distanceToSegmentMeters(point, geometry[index], geometry[index + 1]))
+    }
+    return nearest
+}
+
+private fun distanceToSegmentMeters(point: LatLon, start: LatLon, end: LatLon): Double {
+    val originLat = point.latitude
+    val originLon = point.longitude
+    val px = 0.0
+    val py = 0.0
+    val sx = longitudeMeters(start.longitude - originLon, originLat)
+    val sy = latitudeMeters(start.latitude - originLat)
+    val ex = longitudeMeters(end.longitude - originLon, originLat)
+    val ey = latitudeMeters(end.latitude - originLat)
+    val dx = ex - sx
+    val dy = ey - sy
+    if (hypot(dx, dy) < 0.001) return hypot(sx - px, sy - py)
+    val t = (((px - sx) * dx) + ((py - sy) * dy)) / ((dx * dx) + (dy * dy))
+    val clamped = t.coerceIn(0.0, 1.0)
+    val projectedX = sx + clamped * dx
+    val projectedY = sy + clamped * dy
+    return hypot(projectedX - px, projectedY - py)
+}
+
+private fun distanceMeters(start: LatLon, end: LatLon): Double {
+    val dy = latitudeMeters(end.latitude - start.latitude)
+    val dx = longitudeMeters(end.longitude - start.longitude, (start.latitude + end.latitude) / 2.0)
+    return hypot(dx, dy)
+}
+
+private fun latitudeMeters(deltaLatitude: Double): Double = deltaLatitude * 111_320.0
+
+private fun longitudeMeters(deltaLongitude: Double, latitude: Double): Double {
+    return deltaLongitude * 111_320.0 * cos(Math.toRadians(latitude))
 }

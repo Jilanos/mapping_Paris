@@ -13,6 +13,7 @@ import com.jilanos.mappingparis.data.LatLon
 import com.jilanos.mappingparis.data.StreetSegment
 import java.util.Locale
 import kotlin.math.abs
+import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.ln
 import kotlin.math.max
@@ -25,6 +26,7 @@ class SegmentNetworkOverlay(
     private var segments: List<StreetSegment>,
     private var completionStates: Map<String, Boolean>,
     private var selectedSegmentIds: Set<String>,
+    private var gpsProposedSegmentIds: Set<String>,
     private var mapMode: MapMode,
     private var showDebugOverlay: Boolean,
     private var onTapSegment: (String) -> Unit,
@@ -40,6 +42,10 @@ class SegmentNetworkOverlay(
     }
     private val selectedPaint = Paint(basePaint)
     private val selectedHaloPaint = Paint(basePaint).apply {
+        strokeCap = Paint.Cap.ROUND
+    }
+    private val proposedPaint = Paint(basePaint)
+    private val proposedHaloPaint = Paint(basePaint).apply {
         strokeCap = Paint.Cap.ROUND
     }
     private val debugTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -62,6 +68,7 @@ class SegmentNetworkOverlay(
         segments: List<StreetSegment>,
         completionStates: Map<String, Boolean>,
         selectedSegmentIds: Set<String>,
+        gpsProposedSegmentIds: Set<String>,
         mapMode: MapMode,
         showDebugOverlay: Boolean,
         onTapSegment: (String) -> Unit,
@@ -70,6 +77,7 @@ class SegmentNetworkOverlay(
         this.segments = segments
         this.completionStates = completionStates
         this.selectedSegmentIds = selectedSegmentIds
+        this.gpsProposedSegmentIds = gpsProposedSegmentIds
         this.mapMode = mapMode
         this.showDebugOverlay = showDebugOverlay
         this.onTapSegment = onTapSegment
@@ -140,6 +148,10 @@ class SegmentNetworkOverlay(
     }
 
     private fun drawSelectedSegment(canvas: Canvas, mapView: MapView, segment: StreetSegment) {
+        if (segment.logicalSegmentId in gpsProposedSegmentIds) {
+            drawProposedSegment(canvas, mapView, segment)
+            return
+        }
         val style = selectedStyle(mapView.zoomLevelDouble)
         selectedHaloPaint.apply {
             color = style.haloColor
@@ -152,6 +164,21 @@ class SegmentNetworkOverlay(
             strokeWidth = style.strokeWidth
         }
         drawPolyline(canvas, mapView, segment.geometry, selectedPaint)
+    }
+
+    private fun drawProposedSegment(canvas: Canvas, mapView: MapView, segment: StreetSegment) {
+        val style = proposedStyle(mapView.zoomLevelDouble)
+        proposedHaloPaint.apply {
+            color = style.haloColor
+            strokeWidth = style.haloWidth
+        }
+        drawPolyline(canvas, mapView, segment.geometry, proposedHaloPaint)
+
+        proposedPaint.apply {
+            color = style.color
+            strokeWidth = style.strokeWidth
+        }
+        drawPolyline(canvas, mapView, segment.geometry, proposedPaint)
     }
 
     private fun completedStyle(zoom: Double): SegmentPaintStyle {
@@ -197,6 +224,23 @@ class SegmentNetworkOverlay(
                 strokeWidth = segmentStrokeWidth(zoom, base = 7.8f, highZoom = 9.8f),
                 haloColor = Color.argb(116, 7, 31, 72),
                 haloWidth = segmentStrokeWidth(zoom, base = 12.6f, highZoom = 15.6f)
+            )
+        }
+    }
+
+    private fun proposedStyle(zoom: Double): SegmentPaintStyle {
+        return when (mapMode) {
+            MapMode.LIGHT -> SegmentPaintStyle(
+                color = Color.argb(236, 0, 132, 255),
+                strokeWidth = segmentStrokeWidth(zoom, base = 7.8f, highZoom = 9.8f),
+                haloColor = Color.argb(170, 255, 255, 255),
+                haloWidth = segmentStrokeWidth(zoom, base = 13.6f, highZoom = 16.6f)
+            )
+            MapMode.BLUE -> SegmentPaintStyle(
+                color = Color.argb(242, 255, 214, 64),
+                strokeWidth = segmentStrokeWidth(zoom, base = 7.8f, highZoom = 9.8f),
+                haloColor = Color.argb(150, 7, 31, 72),
+                haloWidth = segmentStrokeWidth(zoom, base = 13.6f, highZoom = 16.6f)
             )
         }
     }
@@ -323,6 +367,65 @@ class SegmentNetworkOverlay(
         val haloColor: Int = Color.TRANSPARENT,
         val haloWidth: Float = 0f
     )
+}
+
+class CurrentLocationOverlay(
+    private var location: UserLocation?,
+    private var mapMode: MapMode
+) : Overlay() {
+    private val point = Point()
+    private val accuracyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+    private val haloPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+        color = Color.WHITE
+    }
+    private val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.FILL
+    }
+    private val ringPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style = Paint.Style.STROKE
+        strokeWidth = 4.5f
+    }
+
+    fun update(location: UserLocation?, mapMode: MapMode) {
+        this.location = location
+        this.mapMode = mapMode
+    }
+
+    override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+        if (shadow) return
+        val current = location ?: return
+        mapView.projection.toPixels(GeoPoint(current.latitude, current.longitude), point)
+        current.accuracyMeters?.takeIf { it > 0f }?.let { accuracy ->
+            val radius = metersToPixels(accuracy.toDouble(), current.latitude, mapView).coerceIn(18f, 170f)
+            accuracyPaint.color = when (mapMode) {
+                MapMode.LIGHT -> Color.argb(42, 0, 132, 255)
+                MapMode.BLUE -> Color.argb(54, 47, 243, 197)
+            }
+            canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), radius, accuracyPaint)
+        }
+
+        val markerColor = when (mapMode) {
+            MapMode.LIGHT -> Color.rgb(0, 100, 255)
+            MapMode.BLUE -> Color.rgb(47, 243, 197)
+        }
+        markerPaint.color = markerColor
+        ringPaint.color = Color.argb(230, 7, 31, 72)
+        canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), 13.5f, haloPaint)
+        canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), 9.0f, markerPaint)
+        canvas.drawCircle(point.x.toFloat(), point.y.toFloat(), 15.5f, ringPaint)
+    }
+
+    private fun metersToPixels(meters: Double, latitude: Double, mapView: MapView): Float {
+        val projection = mapView.projection
+        val base = GeoPoint(latitude, 0.0)
+        val shifted = GeoPoint(latitude, meters / (111_320.0 * cos(Math.toRadians(latitude))))
+        val start = projection.toPixels(base, Point())
+        val end = projection.toPixels(shifted, Point())
+        return hypot((end.x - start.x).toDouble(), (end.y - start.y).toDouble()).toFloat()
+    }
 }
 
 class PinchZoomAmplifierOverlay(

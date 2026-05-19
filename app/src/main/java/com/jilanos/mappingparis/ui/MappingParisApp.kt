@@ -1,6 +1,11 @@
 package com.jilanos.mappingparis.ui
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -35,6 +40,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarData
 import androidx.compose.material3.SnackbarHost
@@ -61,6 +67,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.zIndex
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
@@ -117,6 +124,46 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
         }
     }
 
+    val locationPermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { grants ->
+        val granted = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true ||
+            grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        if (granted) {
+            viewModel.setGpsAssistedEnabled(true)
+            viewModel.onGpsLoading()
+        } else {
+            viewModel.onGpsPermissionDenied()
+        }
+    }
+
+    fun requestGpsUse(recenterIfPossible: Boolean = false) {
+        if (!hasForegroundLocationPermission(context)) {
+            viewModel.setGpsAssistedEnabled(true)
+            locationPermissionLauncher.launch(
+                arrayOf(
+                    Manifest.permission.ACCESS_FINE_LOCATION,
+                    Manifest.permission.ACCESS_COARSE_LOCATION
+                )
+            )
+            return
+        }
+        viewModel.setGpsAssistedEnabled(true)
+        if (recenterIfPossible) {
+            viewModel.recenterOnCurrentLocation()
+        } else {
+            viewModel.onGpsLoading()
+        }
+    }
+
+    ForegroundLocationTracker(
+        enabled = uiState.gpsAssistedEnabled,
+        permissionGranted = hasForegroundLocationPermission(context),
+        onLoading = viewModel::onGpsLoading,
+        onUnavailable = viewModel::onGpsUnavailable,
+        onLocation = viewModel::onLocationUpdate
+    )
+
     MaterialTheme {
         Surface(modifier = Modifier.fillMaxSize()) {
             Box(modifier = Modifier.fillMaxSize()) {
@@ -124,8 +171,10 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     segments = uiState.visibleSegments,
                     completionStates = uiState.completionStates,
                     selectedSegmentIds = uiState.selectedSegmentIds,
+                    gpsProposedSegmentIds = uiState.gpsProposedSegmentIds,
                     mapMode = uiState.mapMode,
                     mapFocus = uiState.mapFocus,
+                    currentLocation = uiState.currentLocation,
                     showDebugOverlay = uiState.showMapDebugOverlay,
                     onSelectSegment = viewModel::selectSegment,
                     onLongPressSegment = viewModel::addSegmentToSelection,
@@ -136,9 +185,17 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     MapTopControls(
                         activePanel = activePanel,
                         filterActive = uiState.filter.isActive,
+                        gpsActive = uiState.gpsAssistedEnabled,
                         onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
                         onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
                         onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
+                        onGps = {
+                            if (!uiState.gpsAssistedEnabled || !hasForegroundLocationPermission(context)) {
+                                requestGpsUse(recenterIfPossible = true)
+                            } else {
+                                viewModel.recenterOnCurrentLocation()
+                            }
+                        },
                         modifier = Modifier
                             .align(Alignment.TopCenter)
                             .statusBarsPadding()
@@ -199,6 +256,13 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onReset = { showResetConfirmation = true },
                         showDebugOverlay = uiState.showMapDebugOverlay,
                         onDebugOverlayChange = viewModel::setMapDebugOverlayEnabled,
+                        gpsAssistedEnabled = uiState.gpsAssistedEnabled,
+                        onGpsAssistedChange = { enabled ->
+                            if (enabled) requestGpsUse() else viewModel.setGpsAssistedEnabled(false)
+                        },
+                        gpsMatchingStrictness = uiState.gpsMatchingStrictness,
+                        onGpsMatchingStrictnessChange = viewModel::setGpsMatchingStrictness,
+                        gpsAvailability = uiState.gpsAvailability,
                         versionLabel = versionLabel,
                         modifier = Modifier
                             .align(Alignment.BottomCenter)
@@ -219,12 +283,24 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     OverlayPanel.NONE -> Unit
                 }
 
+                if (uiState.gpsAssistedEnabled && uiState.gpsAvailability != GpsAvailability.READY) {
+                    GpsStatusChip(
+                        availability = uiState.gpsAvailability,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .statusBarsPadding()
+                            .padding(top = 84.dp)
+                            .zIndex(18f)
+                    )
+                }
+
                 if (uiState.selectedSegmentIds.isNotEmpty()) {
                     SelectionActionBar(
                         selectedSegments = uiState.selectedSegments,
                         selectedLengthMeters = uiState.selectedLengthMeters,
                         selectedArrondissementLabel = uiState.selectedArrondissementLabel,
                         allSelectedCompleted = uiState.allSelectedCompleted,
+                        gpsProposedCount = uiState.gpsProposedSegmentIds.size,
                         onToggleCompletion = {
                             val previousStates = uiState.selectedSegmentIds.associateWith {
                                 uiState.completionStates[it] == true
@@ -324,6 +400,106 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
     }
 }
 
+@Composable
+private fun ForegroundLocationTracker(
+    enabled: Boolean,
+    permissionGranted: Boolean,
+    onLoading: () -> Unit,
+    onUnavailable: () -> Unit,
+    onLocation: (Double, Double, Float?) -> Unit
+) {
+    val context = LocalContext.current
+    DisposableEffect(enabled, permissionGranted) {
+        if (!enabled || !permissionGranted) {
+            onDispose { }
+        } else {
+            val locationManager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
+            val providers = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
+                .filter { provider ->
+                    runCatching { locationManager.isProviderEnabled(provider) }.getOrDefault(false)
+                }
+            if (providers.isEmpty()) {
+                onUnavailable()
+                onDispose { }
+            } else {
+                onLoading()
+                val listener = LocationListener { location: Location ->
+                    onLocation(location.latitude, location.longitude, location.accuracy.takeIf { location.hasAccuracy() })
+                }
+                var requestStarted = false
+                providers.forEach { provider ->
+                    val started = runCatching {
+                        @Suppress("MissingPermission")
+                        locationManager.requestLocationUpdates(
+                            provider,
+                            2_500L,
+                            5f,
+                            listener
+                        )
+                    }.isSuccess
+                    requestStarted = requestStarted || started
+                    runCatching {
+                        @Suppress("MissingPermission")
+                        locationManager.getLastKnownLocation(provider)
+                    }.getOrNull()?.let { location ->
+                        onLocation(location.latitude, location.longitude, location.accuracy.takeIf { location.hasAccuracy() })
+                    }
+                }
+                if (!requestStarted) {
+                    onUnavailable()
+                }
+                onDispose {
+                    locationManager.removeUpdates(listener)
+                }
+            }
+        }
+    }
+}
+
+private fun hasForegroundLocationPermission(context: Context): Boolean {
+    val fineGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_FINE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    val coarseGranted = ContextCompat.checkSelfPermission(
+        context,
+        Manifest.permission.ACCESS_COARSE_LOCATION
+    ) == PackageManager.PERMISSION_GRANTED
+    return fineGranted || coarseGranted
+}
+
+private fun gpsAvailabilityLabel(availability: GpsAvailability): String {
+    return when (availability) {
+        GpsAvailability.OFF -> "Desactive"
+        GpsAvailability.LOADING -> "Recherche position"
+        GpsAvailability.READY -> "Position active"
+        GpsAvailability.PERMISSION_DENIED -> "Autorisation refusee"
+        GpsAvailability.UNAVAILABLE -> "GPS indisponible"
+    }
+}
+
+@Composable
+private fun GpsStatusChip(
+    availability: GpsAvailability,
+    modifier: Modifier = Modifier
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(999.dp),
+        color = Color(0xFF071F48).copy(alpha = 0.94f),
+        contentColor = Color.White,
+        tonalElevation = 6.dp,
+        shadowElevation = 8.dp
+    ) {
+        Text(
+            gpsAvailabilityLabel(availability),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
 private suspend fun showUndoSnackbar(
     snackbarHostState: SnackbarHostState,
     message: String,
@@ -370,9 +546,11 @@ private fun MappingParisSnackbar(data: SnackbarData) {
 private fun MapTopControls(
     activePanel: OverlayPanel,
     filterActive: Boolean,
+    gpsActive: Boolean,
     onMenu: () -> Unit,
     onSearch: () -> Unit,
     onFilter: () -> Unit,
+    onGps: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Box(
@@ -395,12 +573,21 @@ private fun MapTopControls(
                 onClick = onSearch
             )
         }
-        MapControlButton(
-            kind = MapControlKind.FILTER,
-            active = activePanel == OverlayPanel.FILTER || filterActive,
-            onClick = onFilter,
-            modifier = Modifier.align(Alignment.TopEnd)
-        )
+        Column(
+            modifier = Modifier.align(Alignment.TopEnd),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            MapControlButton(
+                kind = MapControlKind.FILTER,
+                active = activePanel == OverlayPanel.FILTER || filterActive,
+                onClick = onFilter
+            )
+            MapControlButton(
+                kind = MapControlKind.GPS,
+                active = gpsActive,
+                onClick = onGps
+            )
+        }
     }
 }
 
@@ -476,6 +663,48 @@ private fun MapControlIcon(kind: MapControlKind, active: Boolean) {
                     )
                 }
             }
+
+            MapControlKind.GPS -> {
+                drawCircle(
+                    color = accent,
+                    radius = size.minDimension * 0.08f,
+                    center = Offset(size.width * 0.5f, size.height * 0.5f)
+                )
+                drawCircle(
+                    color = color,
+                    radius = size.minDimension * 0.28f,
+                    center = Offset(size.width * 0.5f, size.height * 0.5f),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.5f, size.height * 0.05f),
+                    end = Offset(size.width * 0.5f, size.height * 0.23f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.5f, size.height * 0.77f),
+                    end = Offset(size.width * 0.5f, size.height * 0.95f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.05f, size.height * 0.5f),
+                    end = Offset(size.width * 0.23f, size.height * 0.5f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+                drawLine(
+                    color = color,
+                    start = Offset(size.width * 0.77f, size.height * 0.5f),
+                    end = Offset(size.width * 0.95f, size.height * 0.5f),
+                    strokeWidth = stroke,
+                    cap = StrokeCap.Round
+                )
+            }
         }
     }
 }
@@ -483,7 +712,8 @@ private fun MapControlIcon(kind: MapControlKind, active: Boolean) {
 private enum class MapControlKind {
     MENU,
     SEARCH,
-    FILTER
+    FILTER,
+    GPS
 }
 
 @Composable
@@ -679,6 +909,11 @@ private fun SettingsView(
     onReset: () -> Unit,
     showDebugOverlay: Boolean,
     onDebugOverlayChange: (Boolean) -> Unit,
+    gpsAssistedEnabled: Boolean,
+    onGpsAssistedChange: (Boolean) -> Unit,
+    gpsMatchingStrictness: GpsMatchingStrictness,
+    onGpsMatchingStrictnessChange: (GpsMatchingStrictness) -> Unit,
+    gpsAvailability: GpsAvailability,
     versionLabel: String,
     modifier: Modifier = Modifier
 ) {
@@ -694,6 +929,29 @@ private fun SettingsView(
             Button(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Exporter la progression") }
             OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer la progression") }
             OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Reinitialiser la progression") }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("GPS assiste", fontWeight = FontWeight.SemiBold)
+                    Text(gpsAvailabilityLabel(gpsAvailability), style = MaterialTheme.typography.bodySmall, color = Color(0xFF52606D))
+                }
+                Switch(checked = gpsAssistedEnabled, onCheckedChange = onGpsAssistedChange)
+            }
+            if (gpsAssistedEnabled) {
+                Text("Distance max proposition", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+                GpsMatchingStrictness.entries.forEach { strictness ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(
+                            selected = gpsMatchingStrictness == strictness,
+                            onClick = { onGpsMatchingStrictnessChange(strictness) }
+                        )
+                        Text(strictness.label)
+                    }
+                }
+            }
             FilterCheckbox(
                 checked = showDebugOverlay,
                 label = "Reperes zoom carte",
@@ -839,6 +1097,7 @@ private fun SelectionActionBar(
     selectedLengthMeters: Double,
     selectedArrondissementLabel: String,
     allSelectedCompleted: Boolean,
+    gpsProposedCount: Int,
     onToggleCompletion: () -> Unit,
     onClearSelection: () -> Unit,
     modifier: Modifier = Modifier
@@ -871,6 +1130,14 @@ private fun SelectionActionBar(
                 "$selectedArrondissementLabel${if (segmentNames.isNotBlank()) " - $segmentNames" else ""}",
                 style = MaterialTheme.typography.bodySmall
             )
+            if (gpsProposedCount > 0) {
+                Text(
+                    "Proposition GPS: $gpsProposedCount segment${if (gpsProposedCount > 1) "s" else ""} a verifier",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF0064D6),
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onToggleCompletion) {
                     Text(if (allSelectedCompleted) "Non parcouru" else "Parcouru")
@@ -888,8 +1155,10 @@ private fun SegmentMap(
     segments: List<StreetSegment>,
     completionStates: Map<String, Boolean>,
     selectedSegmentIds: Set<String>,
+    gpsProposedSegmentIds: Set<String>,
     mapMode: MapMode,
     mapFocus: MapFocus?,
+    currentLocation: UserLocation?,
     showDebugOverlay: Boolean,
     onSelectSegment: (String) -> Unit,
     onLongPressSegment: (String) -> Unit,
@@ -912,15 +1181,21 @@ private fun SegmentMap(
                     segments = segments,
                     completionStates = completionStates,
                     selectedSegmentIds = selectedSegmentIds,
+                    gpsProposedSegmentIds = gpsProposedSegmentIds,
                     mapMode = mapMode,
                     showDebugOverlay = showDebugOverlay,
                     onTapSegment = onSelectSegment,
                     onLongPressSegment = onLongPressSegment
                 )
+                val locationOverlay = CurrentLocationOverlay(
+                    location = currentLocation,
+                    mapMode = mapMode
+                )
                 val pinchZoomAmplifierOverlay = PinchZoomAmplifierOverlay()
                 overlays.add(segmentOverlay)
+                overlays.add(locationOverlay)
                 overlays.add(pinchZoomAmplifierOverlay)
-                tag = SegmentMapOverlayHolder(segmentOverlay, basemapOverlay)
+                tag = SegmentMapOverlayHolder(segmentOverlay, locationOverlay, basemapOverlay)
             }
         },
         update = { mapView ->
@@ -937,11 +1212,13 @@ private fun SegmentMap(
                 segments = segments,
                 completionStates = completionStates,
                 selectedSegmentIds = selectedSegmentIds,
+                gpsProposedSegmentIds = gpsProposedSegmentIds,
                 mapMode = mapMode,
                 showDebugOverlay = showDebugOverlay,
                 onTapSegment = onSelectSegment,
                 onLongPressSegment = onLongPressSegment
             )
+            holder.locationOverlay.update(currentLocation, mapMode)
             if (mapFocus != null && holder.lastFocusKey != mapFocus.key) {
                 holder.lastFocusKey = mapFocus.key
                 mapView.controller.setZoom(mapFocus.zoom)
@@ -960,6 +1237,7 @@ private fun SegmentMap(
 
 private data class SegmentMapOverlayHolder(
     val segmentOverlay: SegmentNetworkOverlay,
+    val locationOverlay: CurrentLocationOverlay,
     val basemapOverlay: ParisBasemapOverlay,
     var lastFocusKey: Int? = null
 )
