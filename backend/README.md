@@ -43,6 +43,11 @@ Available variables:
 - `STRAVA_CLIENT_ID`, optional and empty by default
 - `STRAVA_CLIENT_SECRET`, optional and empty by default
 - `STRAVA_REDIRECT_URI`, optional and empty by default
+- `STRAVA_SCOPES`, default `read,activity:read_all`
+- `STRAVA_AUTHORIZE_URL`, default `https://www.strava.com/oauth/authorize`
+- `STRAVA_TOKEN_URL`, default `https://www.strava.com/oauth/token`
+- `AUTH_STATE_TTL_SECONDS`, default `600`
+- `TOKEN_ENCRYPTION_KEY`, optional and empty by default
 - `DATABASE_URL`, default `sqlite:///./mapping_paris_strava_b2.db`
 
 To prepare local configuration later:
@@ -51,12 +56,59 @@ To prepare local configuration later:
 Copy-Item .env.example .env
 ```
 
-Keep `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` empty until the OAuth task is
-implemented and real Strava app credentials are available. Do not commit a real
-`.env` file, real Strava credentials, access tokens, or refresh tokens.
+Do not commit a real `.env` file, real Strava credentials, access tokens, or
+refresh tokens.
 
-The current backend does not require Strava configuration to start or serve
-`/health`. OAuth is not implemented yet.
+The backend does not require Strava configuration to start or serve `/health`.
+OAuth routes fail with explicit configuration errors until the required Strava
+variables are present.
+
+## Database
+
+The first persistence layer uses SQLite through SQLAlchemy. Tables are created
+automatically on local application startup. The default database URL is:
+
+```text
+sqlite:///./mapping_paris_strava_b2.db
+```
+
+Set `DATABASE_URL` in `.env` to use another local SQLite path.
+
+Alembic migrations and PostgreSQL support are intentionally not part of this
+milestone.
+
+## Token encryption
+
+Strava access and refresh tokens are encrypted before database storage with a
+Fernet key loaded from `TOKEN_ENCRYPTION_KEY`.
+
+Generate a local development key with:
+
+```powershell
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Then place it in your untracked `.env`:
+
+```text
+TOKEN_ENCRYPTION_KEY=
+```
+
+If the key is missing, `/health` still works, but OAuth callback and refresh
+token storage fail safely. The backend never stores raw tokens as a fallback.
+
+## Strava OAuth routes
+
+Implemented routes:
+
+- `GET /auth/strava/start`
+- `GET /auth/strava/callback`
+- `POST /auth/strava/refresh`
+- `GET /auth/strava/status`
+
+These routes prepare the Strava connection and encrypted token storage only.
+Real activity sync, stream download, segment matching, proposal generation, and
+Android integration are not implemented yet.
 
 ## Run the server
 
@@ -78,6 +130,12 @@ Expected response:
   "service": "mapping-paris-strava-b2",
   "version": "0.1.0"
 }
+```
+
+Auth status:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8000/auth/strava/status
 ```
 
 ## Run tests

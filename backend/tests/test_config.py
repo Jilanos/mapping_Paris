@@ -16,6 +16,11 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
         "STRAVA_CLIENT_ID",
         "STRAVA_CLIENT_SECRET",
         "STRAVA_REDIRECT_URI",
+        "STRAVA_SCOPES",
+        "STRAVA_AUTHORIZE_URL",
+        "STRAVA_TOKEN_URL",
+        "AUTH_STATE_TTL_SECONDS",
+        "TOKEN_ENCRYPTION_KEY",
         "DATABASE_URL",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -30,6 +35,11 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
     assert settings.strava_client_id == ""
     assert settings.strava_client_secret == ""
     assert settings.strava_redirect_uri == ""
+    assert settings.strava_scopes == "read,activity:read_all"
+    assert settings.strava_authorize_url == "https://www.strava.com/oauth/authorize"
+    assert settings.strava_token_url == "https://www.strava.com/oauth/token"
+    assert settings.auth_state_ttl_seconds == 600
+    assert settings.token_encryption_key == ""
 
 
 def test_strava_configured_is_false_when_values_are_missing() -> None:

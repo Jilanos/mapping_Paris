@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     strava_client_id: str = ""
     strava_client_secret: str = ""
     strava_redirect_uri: str = ""
+    strava_scopes: str = "read,activity:read_all"
+    strava_authorize_url: str = "https://www.strava.com/oauth/authorize"
+    strava_token_url: str = "https://www.strava.com/oauth/token"
+    auth_state_ttl_seconds: int = 600
+    token_encryption_key: str = ""
     database_url: str = "sqlite:///./mapping_paris_strava_b2.db"
 
     model_config = SettingsConfigDict(
