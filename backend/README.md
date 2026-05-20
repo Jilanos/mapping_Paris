@@ -49,6 +49,11 @@ Available variables:
 - `AUTH_STATE_TTL_SECONDS`, default `600`
 - `TOKEN_ENCRYPTION_KEY`, optional and empty by default
 - `DATABASE_URL`, default `sqlite:///./mapping_paris_strava_b2.db`
+- `STRAVA_SYNC_PER_PAGE`, default `30`
+- `STRAVA_SYNC_MAX_PAGES`, default `1`
+- `STRAVA_SYNC_DOWNLOAD_STREAMS`, default `true`
+- `STRAVA_SYNC_SPORT_TYPES`, default `Run,Ride`
+- `STRAVA_TOKEN_REFRESH_MARGIN_SECONDS`, default `300`
 
 To prepare local configuration later:
 
@@ -107,8 +112,34 @@ Implemented routes:
 - `GET /auth/strava/status`
 
 These routes prepare the Strava connection and encrypted token storage only.
-Real activity sync, stream download, segment matching, proposal generation, and
-Android integration are not implemented yet.
+Real segment matching, proposal generation, and Android integration are not
+implemented yet.
+
+## Strava sync routes
+
+Implemented routes:
+
+- `POST /sync/strava`
+- `GET /sync/status`
+- `GET /sync/runs`
+
+`POST /sync/strava` runs one synchronous sync pass. There is no background
+worker, scheduler, Celery, Redis, or cron in this milestone.
+
+Current sync behavior:
+
+- loads the encrypted stored Strava token;
+- refreshes the token when expired or close to expiry;
+- fetches recent activities from Strava;
+- keeps `Run` and `Ride` by default;
+- ignores unsupported sport types such as `Walk`;
+- downloads `latlng`, `distance`, and `time` streams for eligible activities;
+- stores sync runs and sync errors;
+- never returns raw tokens, refresh tokens, client secrets, or encryption keys.
+
+Activity sync and stream download are implemented as a backend foundation only.
+Segment dataset ingestion, GPS-to-segment matching, proposal storage, proposal
+APIs, and Android review are still future tasks.
 
 ## Run the server
 
@@ -151,3 +182,5 @@ Or from `backend/`:
 ```powershell
 .\.venv\Scripts\python.exe -m pytest tests
 ```
+
+Tests mock Strava API calls. They do not call the real Strava API.

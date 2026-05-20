@@ -67,3 +67,33 @@ def test_refresh_access_token_maps_strava_response() -> None:
 
     assert token.access_token == "refreshed-access"
     assert token.refresh_token == "refreshed-refresh"
+
+
+def test_list_activities_builds_expected_request() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v3/athlete/activities"
+        assert request.url.params["page"] == "2"
+        assert request.url.params["per_page"] == "30"
+        assert request.headers["Authorization"].startswith("Bearer ")
+        assert request.headers["Authorization"].endswith("example-access")
+        return httpx.Response(200, json=[])
+
+    client = StravaClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+
+    assert client.list_activities("example-access", page=2, per_page=30) == []
+
+
+def test_get_activity_streams_builds_expected_request() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/api/v3/activities/123/streams"
+        assert request.url.params["keys"] == "latlng,distance,time"
+        assert request.url.params["key_by_type"] == "true"
+        assert request.headers["Authorization"].startswith("Bearer ")
+        assert request.headers["Authorization"].endswith("example-access")
+        return httpx.Response(200, json={"latlng": {"data": [[48.0, 2.0]]}})
+
+    client = StravaClient(_settings(), httpx.Client(transport=httpx.MockTransport(handler)))
+
+    assert client.get_activity_streams("example-access", 123) == {
+        "latlng": {"data": [[48.0, 2.0]]}
+    }

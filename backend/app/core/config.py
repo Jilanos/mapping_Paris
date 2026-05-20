@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     auth_state_ttl_seconds: int = 600
     token_encryption_key: str = ""
     database_url: str = "sqlite:///./mapping_paris_strava_b2.db"
+    strava_sync_per_page: int = 30
+    strava_sync_max_pages: int = 1
+    strava_sync_download_streams: bool = True
+    strava_sync_sport_types: str = "Run,Ride"
+    strava_token_refresh_margin_seconds: int = 300
 
     model_config = SettingsConfigDict(
         env_prefix="",
@@ -36,6 +41,14 @@ class Settings(BaseSettings):
                 self.strava_redirect_uri,
             )
         )
+
+    @property
+    def sync_sport_types(self) -> set[str]:
+        return {
+            value.strip()
+            for value in self.strava_sync_sport_types.split(",")
+            if value.strip()
+        }
 
 
 @lru_cache

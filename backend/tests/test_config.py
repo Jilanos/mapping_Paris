@@ -22,6 +22,11 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
         "AUTH_STATE_TTL_SECONDS",
         "TOKEN_ENCRYPTION_KEY",
         "DATABASE_URL",
+        "STRAVA_SYNC_PER_PAGE",
+        "STRAVA_SYNC_MAX_PAGES",
+        "STRAVA_SYNC_DOWNLOAD_STREAMS",
+        "STRAVA_SYNC_SPORT_TYPES",
+        "STRAVA_TOKEN_REFRESH_MARGIN_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -40,6 +45,11 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
     assert settings.strava_token_url == "https://www.strava.com/oauth/token"
     assert settings.auth_state_ttl_seconds == 600
     assert settings.token_encryption_key == ""
+    assert settings.strava_sync_per_page == 30
+    assert settings.strava_sync_max_pages == 1
+    assert settings.strava_sync_download_streams is True
+    assert settings.sync_sport_types == {"Run", "Ride"}
+    assert settings.strava_token_refresh_margin_seconds == 300
 
 
 def test_strava_configured_is_false_when_values_are_missing() -> None:

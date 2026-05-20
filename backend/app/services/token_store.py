@@ -43,3 +43,9 @@ class TokenStore:
         if token is None:
             return None
         return self._crypto.decrypt(token.refresh_token_encrypted)
+
+    def get_access_token(self) -> str | None:
+        token = self.get_latest()
+        if token is None:
+            return None
+        return self._crypto.decrypt(token.access_token_encrypted)
