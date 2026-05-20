@@ -29,18 +29,34 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 
 ## Configuration
 
-Configuration is loaded from environment variables.
+Configuration is centralized in `app/core/config.py` and loaded from
+environment variables. Local `.env` files are also supported for development,
+but they must never be committed.
 
 Available variables:
 
 - `APP_NAME`, default `mapping-paris-strava-b2`
 - `APP_VERSION`, default `0.1.0`
 - `ENV`, default `local`
+- `LOG_LEVEL`, default `INFO`
+- `API_BASE_URL`, optional
 - `STRAVA_CLIENT_ID`, optional and empty by default
 - `STRAVA_CLIENT_SECRET`, optional and empty by default
+- `STRAVA_REDIRECT_URI`, optional and empty by default
+- `DATABASE_URL`, default `sqlite:///./mapping_paris_strava_b2.db`
 
-Copy `.env.example` only for local reference if needed. Do not commit a real
-`.env` file or real Strava credentials.
+To prepare local configuration later:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+Keep `STRAVA_CLIENT_ID` and `STRAVA_CLIENT_SECRET` empty until the OAuth task is
+implemented and real Strava app credentials are available. Do not commit a real
+`.env` file, real Strava credentials, access tokens, or refresh tokens.
+
+The current backend does not require Strava configuration to start or serve
+`/health`. OAuth is not implemented yet.
 
 ## Run the server
 
@@ -69,11 +85,11 @@ Expected response:
 From the repository root:
 
 ```powershell
-pytest backend/tests
+backend\.venv\Scripts\python.exe -m pytest backend\tests
 ```
 
 Or from `backend/`:
 
 ```powershell
-pytest tests
+.\.venv\Scripts\python.exe -m pytest tests
 ```
