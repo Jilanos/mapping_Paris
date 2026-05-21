@@ -9,8 +9,10 @@ The project deliberately keeps three things separate:
 - the user's completion or validation state;
 - the Android app and local PWA inspection tooling.
 
-There is no backend, no account system, no automatic GPS validation, and no
-cloud sync in the current scope.
+The Android app remains local-first: there is no account system, no cloud sync,
+and no automatic segment validation. A local Strava B2 backend prototype now
+exists for manual proposal review, but accepted backend proposals do not update
+local completion state yet.
 
 ## Current State
 
@@ -80,7 +82,8 @@ Run the backend locally from PowerShell:
 ```powershell
 cd backend
 .\.venv\Scripts\Activate.ps1
-uvicorn app.main:app --reload
+.\scripts\init-local-db.ps1
+.\scripts\run-local-backend.ps1
 ```
 
 Then configure the backend URL in the Android panel:
@@ -103,6 +106,16 @@ Current B2 Android scope:
 Important limitation: accepting a B2 proposal does not mark the segment as
 completed in the Android Room database yet. Local completion remains controlled
 by the existing manual validation flow.
+
+Local E2E checks:
+
+```powershell
+backend\scripts\e2e-check-local.ps1
+```
+
+Real Strava validation requires an untracked `backend/.env` containing
+`TOKEN_ENCRYPTION_KEY`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, and
+`STRAVA_REDIRECT_URI`. See `backend/README.md` for the full checklist.
 
 ## Segment Dataset
 

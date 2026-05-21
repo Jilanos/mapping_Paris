@@ -1,11 +1,10 @@
 # Mapping Paris Strava B2 Backend
 
-This folder contains the initial FastAPI skeleton for the Strava B2 backend.
+This folder contains the FastAPI prototype for the Strava B2 backend.
 
-B2 will eventually handle Strava OAuth, token storage, activity synchronization,
-GPS stream ingestion, segment matching, and proposal APIs for the Android app.
-This first skeleton only exposes a health endpoint. Strava OAuth, database
-storage, activity sync, stream download, and matching are not implemented yet.
+B2 handles Strava OAuth foundations, encrypted token storage, activity
+synchronization, GPS stream ingestion, segment dataset ingestion, segment
+matching, and proposal APIs for the Android app.
 
 The Android app remains responsible for reviewing and confirming proposed
 segments. The backend must not automatically mark segments as completed.
@@ -268,3 +267,84 @@ Or from `backend/`:
 ```
 
 Tests mock Strava API calls. They do not call the real Strava API.
+
+## Local E2E validation checklist
+
+Use this checklist when validating the full local backend-to-Android flow. Real
+Strava credentials must stay in the untracked `backend/.env` file.
+
+Backend setup:
+
+```powershell
+cd backend
+Copy-Item .env.example .env
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+
+Then edit `.env` locally and set:
+
+- `TOKEN_ENCRYPTION_KEY`
+- `STRAVA_CLIENT_ID`
+- `STRAVA_CLIENT_SECRET`
+- `STRAVA_REDIRECT_URI=http://127.0.0.1:8000/auth/strava/callback`
+
+Initialize the local segment dataset:
+
+```powershell
+.\scripts\init-local-db.ps1
+```
+
+Start the backend:
+
+```powershell
+.\scripts\run-local-backend.ps1
+```
+
+In another PowerShell window, run non-secret status checks:
+
+```powershell
+.\scripts\e2e-check-local.ps1
+```
+
+Complete Strava OAuth manually:
+
+```text
+http://127.0.0.1:8000/auth/strava/start
+```
+
+Android setup:
+
+- build and install the debug APK;
+- open `Propositions Strava B2`;
+- emulator backend URL: `http://10.0.2.2:8000`;
+- physical phone backend URL: `http://PC_LAN_IP:8000`;
+- physical phone and PC must be on the same Wi-Fi;
+- Windows firewall may need to allow inbound access to port `8000`.
+
+Manual E2E flow:
+
+1. Start the backend.
+2. Ingest the Paris segment dataset.
+3. Complete Strava OAuth in the browser.
+4. Trigger Strava sync from Android.
+5. Generate proposals from Android.
+6. Load proposals from Android.
+7. Verify proposed segments appear in orange.
+8. Accept or ignore a proposal.
+9. Verify local Android completion statistics do not change.
+
+Troubleshooting:
+
+- Backend unreachable: check URL, Wi-Fi, firewall, and whether uvicorn is
+  listening on `0.0.0.0` for physical-phone tests.
+- Wrong redirect URI: make the Strava app callback match
+  `STRAVA_REDIRECT_URI`.
+- Missing encryption key: generate `TOKEN_ENCRYPTION_KEY` before OAuth callback.
+- Missing scopes: keep `STRAVA_SCOPES=read,activity:read_all`.
+- No activities: first sync only keeps `Run` and `Ride`.
+- No streams: the Strava activity may not expose GPS streams.
+- No proposals: ingest segments first, then sync streams, then generate
+  proposals.
+- Physical phone cannot reach `localhost`: use the PC LAN IP, not `localhost`.
