@@ -2,13 +2,13 @@
 
 From version: 0.3.3
 
-Status: Ready
+Status: In Review
 
 Understanding: 88%
 
 Confidence: 76%
 
-Progress: 0%
+Progress: 90%
 
 Complexity: Medium
 
@@ -47,4 +47,33 @@ Out:
 
 ## Report
 
-Not started.
+Implemented and validated locally.
+
+Delivered the proposals API foundation:
+
+- SQLite model `SegmentMatchProposal`.
+- `POST /proposals/generate`
+- `GET /proposals`
+- `GET /proposals/status`
+- `POST /proposals/{proposal_id}/dismiss`
+- `POST /proposals/{proposal_id}/accept`
+- Query filters by status, arrondissement, and street name.
+- Optional raw match output through `include_raw`.
+- Safe proposal status updates without deleting proposals.
+- Backend `accepted` status is only a B2 acknowledgement; it does not update
+  Android completion state.
+- Tests verify proposal generation, idempotence, filters, counts,
+  accept/dismiss behavior, and absence of tokens/secrets in responses.
+
+Validation passed:
+
+- `python -m compileall backend/app`
+- `backend/.venv/Scripts/python.exe -m pytest backend/tests`
+- `git diff --check`
+- staged secret scan before commit
+
+No Android integration was implemented.
+
+Pending:
+
+- Manual validation after commit/push.

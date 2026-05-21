@@ -54,6 +54,13 @@ Available variables:
 - `STRAVA_SYNC_DOWNLOAD_STREAMS`, default `true`
 - `STRAVA_SYNC_SPORT_TYPES`, default `Run,Ride`
 - `STRAVA_TOKEN_REFRESH_MARGIN_SECONDS`, default `300`
+- `SEGMENT_DATASET_PATH`, default `../app/src/main/assets/paris_segments.geojson`
+- `SEGMENT_DATASET_VERSION`, optional
+- `MATCH_MAX_DISTANCE_METERS`, default `30`
+- `MATCH_MIN_COVERAGE_RATIO`, default `0.35`
+- `MATCH_MIN_MATCHED_POINTS`, default `2`
+- `MATCH_MAX_ACTIVITIES_PER_RUN`, default `20`
+- `MATCH_CANDIDATE_BBOX_BUFFER_METERS`, default `50`
 
 To prepare local configuration later:
 
@@ -111,9 +118,7 @@ Implemented routes:
 - `POST /auth/strava/refresh`
 - `GET /auth/strava/status`
 
-These routes prepare the Strava connection and encrypted token storage only.
-Real segment matching, proposal generation, and Android integration are not
-implemented yet.
+These routes prepare the Strava connection and encrypted token storage.
 
 ## Strava sync routes
 
@@ -137,9 +142,7 @@ Current sync behavior:
 - stores sync runs and sync errors;
 - never returns raw tokens, refresh tokens, client secrets, or encryption keys.
 
-Activity sync and stream download are implemented as a backend foundation only.
-GPS-to-segment matching, proposal storage, proposal APIs, and Android review
-are still future tasks.
+Activity sync and stream download are implemented as a backend foundation.
 
 ## Segment dataset ingestion
 
@@ -183,6 +186,44 @@ Invoke-RestMethod "http://127.0.0.1:8000/segments/search?street_name=Lepic"
 `/segments/search` returns metadata and bounding boxes by default. It does not
 return user progress, Strava tokens, or raw secrets. Full geometry is returned
 only with `include_geometry=true`.
+
+## Matching and proposal routes
+
+Implemented routes:
+
+- `POST /proposals/generate`
+- `GET /proposals`
+- `GET /proposals/status`
+- `POST /proposals/{proposal_id}/dismiss`
+- `POST /proposals/{proposal_id}/accept`
+
+`POST /proposals/generate` runs synchronously against stored Strava streams and
+the active segment dataset. It does not call Strava directly and it does not
+write Android completion state.
+
+Matching assumptions:
+
+- GPS stream points are compared with segment polylines using a lightweight
+  local meter approximation.
+- Candidate segments are reduced by bounding box intersection plus
+  `MATCH_CANDIDATE_BBOX_BUFFER_METERS`.
+- A proposal is created only when distance, coverage, and matched-point
+  thresholds pass.
+- Coverage is estimated from projected matched GPS points along the segment
+  polyline.
+- Confidence is deterministic:
+  - 55% coverage component;
+  - 35% distance component;
+  - 10% matched-points component.
+
+Proposal statuses are backend review states only:
+
+- `proposed`
+- `dismissed`
+- `accepted`
+
+`accepted` does not mean completed in Android. Android integration and final
+manual confirmation remain future work.
 
 ## Run the server
 

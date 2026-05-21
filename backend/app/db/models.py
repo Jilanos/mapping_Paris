@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -203,3 +203,54 @@ class B2StreetSegment(Base):
         default=utc_now,
         nullable=False,
     )
+
+
+class SegmentMatchProposal(Base):
+    __tablename__ = "segment_match_proposals"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "strava_activity_id",
+            "logical_segment_id",
+            name="uq_proposal_dataset_activity_logical",
+        ),
+        Index("ix_proposals_status", "status"),
+        Index("ix_proposals_arrondissement", "arrondissement"),
+        Index("ix_proposals_street_name", "street_name"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    dataset_version_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("segment_dataset_versions.id"),
+        nullable=False,
+        index=True,
+    )
+    strava_activity_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    segment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    logical_segment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    street_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    arrondissement: Mapped[str] = mapped_column(String(16), nullable=False)
+    segment_length_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    covered_length_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    coverage_ratio: Mapped[float] = mapped_column(Float, nullable=False)
+    min_distance_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    avg_distance_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    max_distance_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    matched_points_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="proposed", index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    raw_match_json: Mapped[str | None] = mapped_column(Text, nullable=True)

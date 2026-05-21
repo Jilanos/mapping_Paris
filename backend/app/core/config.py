@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     strava_token_refresh_margin_seconds: int = 300
     segment_dataset_path: str = "../app/src/main/assets/paris_segments.geojson"
     segment_dataset_version: str = ""
+    match_max_distance_meters: float = 30.0
+    match_min_coverage_ratio: float = 0.35
+    match_min_matched_points: int = 2
+    match_max_activities_per_run: int = 20
+    match_candidate_bbox_buffer_meters: float = 50.0
 
     model_config = SettingsConfigDict(
         env_prefix="",

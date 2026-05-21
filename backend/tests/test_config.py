@@ -27,6 +27,13 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
         "STRAVA_SYNC_DOWNLOAD_STREAMS",
         "STRAVA_SYNC_SPORT_TYPES",
         "STRAVA_TOKEN_REFRESH_MARGIN_SECONDS",
+        "SEGMENT_DATASET_PATH",
+        "SEGMENT_DATASET_VERSION",
+        "MATCH_MAX_DISTANCE_METERS",
+        "MATCH_MIN_COVERAGE_RATIO",
+        "MATCH_MIN_MATCHED_POINTS",
+        "MATCH_MAX_ACTIVITIES_PER_RUN",
+        "MATCH_CANDIDATE_BBOX_BUFFER_METERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -50,6 +57,13 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
     assert settings.strava_sync_download_streams is True
     assert settings.sync_sport_types == {"Run", "Ride"}
     assert settings.strava_token_refresh_margin_seconds == 300
+    assert settings.segment_dataset_path == "../app/src/main/assets/paris_segments.geojson"
+    assert settings.segment_dataset_version == ""
+    assert settings.match_max_distance_meters == 30.0
+    assert settings.match_min_coverage_ratio == 0.35
+    assert settings.match_min_matched_points == 2
+    assert settings.match_max_activities_per_run == 20
+    assert settings.match_candidate_bbox_buffer_meters == 50.0
 
 
 def test_strava_configured_is_false_when_values_are_missing() -> None:
