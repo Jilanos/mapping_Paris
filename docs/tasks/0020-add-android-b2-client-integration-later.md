@@ -2,13 +2,13 @@
 
 From version: 0.3.3
 
-Status: Ready
+Status: In Review
 
 Understanding: 82%
 
 Confidence: 68%
 
-Progress: 0%
+Progress: 90%
 
 Complexity: High
 
@@ -47,4 +47,14 @@ Out:
 
 ## Report
 
-Not started.
+Implemented Android B2 integration foundation:
+
+- backend URL setting in the Strava B2 panel;
+- B2 health, auth, sync, and proposal status calls;
+- manual sync and proposal-generation actions;
+- proposed-segment loading and map highlighting;
+- backend-side accept and dismiss actions;
+- documentation for emulator and physical-device backend URLs.
+
+Accepting a proposal still does not update local Room completion state. That
+manual application flow remains a future task.

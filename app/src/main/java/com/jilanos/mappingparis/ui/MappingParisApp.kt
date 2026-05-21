@@ -74,6 +74,7 @@ import androidx.compose.ui.zIndex
 import androidx.core.content.ContextCompat
 import androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.jilanos.mappingparis.b2.B2Proposal
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.StreetSegment
 import com.jilanos.mappingparis.location.GpsTrackingService
@@ -92,7 +93,8 @@ private enum class OverlayPanel {
     SEARCH,
     FILTER,
     SETTINGS,
-    STATS
+    STATS,
+    B2
 }
 
 @Composable
@@ -203,6 +205,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     completionStates = uiState.completionStates,
                     selectedSegmentIds = uiState.selectedSegmentIds,
                     gpsProposedSegmentIds = uiState.gpsProposedSegmentIds,
+                    b2ProposedSegmentIds = uiState.b2ProposedSegmentIds,
                     mapMode = uiState.mapMode,
                     mapFocus = uiState.mapFocus,
                     currentLocation = uiState.currentLocation,
@@ -213,7 +216,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     modifier = Modifier.fillMaxSize()
                 )
 
-                if (activePanel != OverlayPanel.SETTINGS && activePanel != OverlayPanel.STATS) {
+                if (activePanel != OverlayPanel.SETTINGS && activePanel != OverlayPanel.STATS && activePanel != OverlayPanel.B2) {
                     MapTopControls(
                         activePanel = activePanel,
                         filterActive = uiState.filter.isActive,
@@ -255,6 +258,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onMapModeChange = viewModel::setMapMode,
                         onSettings = { activePanel = OverlayPanel.SETTINGS },
                         onStats = { activePanel = OverlayPanel.STATS },
+                        onB2 = { activePanel = OverlayPanel.B2 },
                         onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -322,6 +326,25 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     OverlayPanel.STATS -> StatsView(
                         globalStats = uiState.globalStats,
                         arrondissementStats = uiState.arrondissementStats,
+                        onClose = { activePanel = OverlayPanel.MENU },
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .zIndex(19f)
+                    )
+
+                    OverlayPanel.B2 -> B2ReviewView(
+                        backendBaseUrl = uiState.backendBaseUrl,
+                        b2State = uiState.b2State,
+                        proposals = uiState.b2Proposals,
+                        highlightedProposalCount = uiState.b2ProposedSegmentIds.size,
+                        onBackendUrlChange = viewModel::setBackendBaseUrl,
+                        onTestBackend = viewModel::testB2Backend,
+                        onRefreshStatus = viewModel::refreshB2Status,
+                        onTriggerSync = viewModel::triggerB2StravaSync,
+                        onGenerateProposals = viewModel::triggerB2ProposalGeneration,
+                        onLoadProposals = viewModel::loadB2Proposals,
+                        onAcceptProposal = viewModel::acceptB2Proposal,
+                        onDismissProposal = viewModel::dismissB2Proposal,
                         onClose = { activePanel = OverlayPanel.MENU },
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -888,6 +911,7 @@ private fun MainMenu(
     onMapModeChange: (MapMode) -> Unit,
     onSettings: () -> Unit,
     onStats: () -> Unit,
+    onB2: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -915,6 +939,9 @@ private fun MainMenu(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = onSettings) { Text("Parametres") }
                 OutlinedButton(onClick = onStats) { Text("Statistiques") }
+            }
+            OutlinedButton(onClick = onB2, modifier = Modifier.fillMaxWidth()) {
+                Text("Propositions Strava B2")
             }
         }
     }
@@ -1156,6 +1183,204 @@ private fun SettingsView(
 }
 
 @Composable
+private fun B2ReviewView(
+    backendBaseUrl: String,
+    b2State: B2IntegrationState,
+    proposals: List<B2Proposal>,
+    highlightedProposalCount: Int,
+    onBackendUrlChange: (String) -> Unit,
+    onTestBackend: () -> Unit,
+    onRefreshStatus: () -> Unit,
+    onTriggerSync: () -> Unit,
+    onGenerateProposals: () -> Unit,
+    onLoadProposals: () -> Unit,
+    onAcceptProposal: (Int) -> Unit,
+    onDismissProposal: (Int) -> Unit,
+    onClose: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var draftUrl by remember(backendBaseUrl) { mutableStateOf(backendBaseUrl) }
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = Color(0xFFF3F7FA)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            HeaderRow(title = "Propositions Strava", onClose = onClose)
+            Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    OutlinedTextField(
+                        value = draftUrl,
+                        onValueChange = { draftUrl = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        label = { Text("URL backend B2") },
+                        placeholder = { Text("http://10.0.2.2:8000 ou http://IP_PC:8000") }
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { onBackendUrlChange(draftUrl) }, enabled = !b2State.loading) {
+                            Text("Enregistrer")
+                        }
+                        OutlinedButton(onClick = onTestBackend, enabled = !b2State.loading) {
+                            Text("Tester")
+                        }
+                        OutlinedButton(onClick = onRefreshStatus, enabled = !b2State.loading) {
+                            Text("Statut")
+                        }
+                    }
+                    B2StatusText(b2State, highlightedProposalCount)
+                }
+            }
+
+            Card(shape = RoundedCornerShape(18.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(14.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Text("Actions backend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onTriggerSync, enabled = !b2State.loading) {
+                            Text("Synchroniser")
+                        }
+                        OutlinedButton(onClick = onGenerateProposals, enabled = !b2State.loading) {
+                            Text("Generer")
+                        }
+                    }
+                    Button(onClick = onLoadProposals, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                        Text("Charger les propositions")
+                    }
+                    Text(
+                        "Accepter la proposition ne marque pas encore le segment comme parcouru dans l'app.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Color(0xFF52606D)
+                    )
+                }
+            }
+
+            Text("A verifier", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (proposals.isEmpty()) {
+                    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            "Aucune proposition chargee.",
+                            modifier = Modifier.padding(14.dp),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                } else {
+                    proposals.forEach { proposal ->
+                        B2ProposalRow(
+                            proposal = proposal,
+                            loading = b2State.loading,
+                            onAccept = { onAcceptProposal(proposal.id) },
+                            onDismiss = { onDismissProposal(proposal.id) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun B2StatusText(
+    b2State: B2IntegrationState,
+    highlightedProposalCount: Int
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val health = b2State.health
+        Text(
+            "Backend: ${if (health?.status == "ok") "joignable (${health.version})" else "non teste"}",
+            style = MaterialTheme.typography.bodySmall
+        )
+        Text(
+            "Strava: ${if (b2State.authStatus?.connected == true) "connecte" else "non connecte"}",
+            style = MaterialTheme.typography.bodySmall
+        )
+        b2State.syncStatus?.let { sync ->
+            Text(
+                "Activites: ${sync.storedActivities}, traces: ${sync.storedStreams}",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        b2State.proposalStatus?.let { status ->
+            Text(
+                "Propositions: ${status.proposedCount} a verifier, ${status.acceptedCount} acceptees, ${status.dismissedCount} ignorees",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+        Text(
+            "Segments surlignes: $highlightedProposalCount",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF52606D)
+        )
+        if (b2State.loading) {
+            Text("Operation en cours...", style = MaterialTheme.typography.bodySmall, color = Color(0xFF52606D))
+        }
+        b2State.message?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFF0D8B70), fontWeight = FontWeight.SemiBold)
+        }
+        b2State.error?.let {
+            Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFFB3261E), fontWeight = FontWeight.SemiBold)
+        }
+    }
+}
+
+@Composable
+private fun B2ProposalRow(
+    proposal: B2Proposal,
+    loading: Boolean,
+    onAccept: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text(proposal.streetName.ifBlank { proposal.segmentId }, fontWeight = FontWeight.SemiBold)
+                Text("${proposal.arrondissement}e", fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                "${formatMeters(proposal.coveredLengthMeters)} / ${formatMeters(proposal.segmentLengthMeters)} - ${formatPercent(proposal.coverageRatio * 100.0)}",
+                style = MaterialTheme.typography.bodySmall
+            )
+            LinearProgressIndicator(
+                progress = { proposal.coverageRatio.toFloat().coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(5.dp),
+                color = Color(0xFFFF8A19),
+                trackColor = Color(0xFFE0E7EC)
+            )
+            Text(
+                "Confiance ${formatPercent(proposal.confidenceScore * 100.0)} - activite ${proposal.stravaActivityId}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF52606D)
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = onAccept, enabled = !loading) { Text("Accepter") }
+                OutlinedButton(onClick = onDismiss, enabled = !loading) { Text("Ignorer") }
+            }
+        }
+    }
+}
+
+@Composable
 private fun StatsView(
     globalStats: CompletionStats,
     arrondissementStats: Map<String, CompletionStats>,
@@ -1344,6 +1569,7 @@ private fun SegmentMap(
     completionStates: Map<String, Boolean>,
     selectedSegmentIds: Set<String>,
     gpsProposedSegmentIds: Set<String>,
+    b2ProposedSegmentIds: Set<String>,
     mapMode: MapMode,
     mapFocus: MapFocus?,
     currentLocation: UserLocation?,
@@ -1372,6 +1598,7 @@ private fun SegmentMap(
                     completionStates = completionStates,
                     selectedSegmentIds = selectedSegmentIds,
                     gpsProposedSegmentIds = gpsProposedSegmentIds,
+                    b2ProposedSegmentIds = b2ProposedSegmentIds,
                     mapMode = mapMode,
                     showDebugOverlay = showDebugOverlay,
                     onTapSegment = onSelectSegment,
@@ -1402,6 +1629,7 @@ private fun SegmentMap(
                 completionStates = completionStates,
                 selectedSegmentIds = selectedSegmentIds,
                 gpsProposedSegmentIds = gpsProposedSegmentIds,
+                b2ProposedSegmentIds = b2ProposedSegmentIds,
                 mapMode = mapMode,
                 showDebugOverlay = showDebugOverlay,
                 onTapSegment = onSelectSegment,

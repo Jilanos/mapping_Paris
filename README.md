@@ -69,6 +69,41 @@ GPS data stays local to the device. When GPS assistance is enabled, the app can
 keep tracking through a foreground service while the phone is locked. There is
 no automatic segment completion, no route upload, and no cloud sync.
 
+## Strava B2 Backend Preview
+
+The repository also contains a local FastAPI backend prototype under
+`backend/`. Android can now connect to this B2 backend from the in-app
+`Propositions Strava B2` panel.
+
+Run the backend locally from PowerShell:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+```
+
+Then configure the backend URL in the Android panel:
+
+- Android emulator: `http://10.0.2.2:8000`
+- physical phone: use the PC LAN IP, for example `http://192.168.x.x:8000`,
+  with the phone and PC on the same Wi-Fi.
+
+`localhost` on a physical phone means the phone itself, not the PC. The backend
+must also be allowed through the local firewall if Windows blocks the port.
+
+Current B2 Android scope:
+
+- health/status checks;
+- manual Strava sync trigger;
+- manual proposal generation trigger;
+- loading and highlighting proposed segments;
+- accepting or dismissing proposals on the backend.
+
+Important limitation: accepting a B2 proposal does not mark the segment as
+completed in the Android Room database yet. Local completion remains controlled
+by the existing manual validation flow.
+
 ## Segment Dataset
 
 The current V1 dataset is generated from OpenStreetMap and keeps streets whose

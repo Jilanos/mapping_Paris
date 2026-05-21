@@ -4,6 +4,16 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.jilanos.mappingparis.b2.B2ApiClient
+import com.jilanos.mappingparis.b2.B2ApiException
+import com.jilanos.mappingparis.b2.B2AuthStatus
+import com.jilanos.mappingparis.b2.B2Health
+import com.jilanos.mappingparis.b2.B2Proposal
+import com.jilanos.mappingparis.b2.B2ProposalGenerationSummary
+import com.jilanos.mappingparis.b2.B2ProposalStatus
+import com.jilanos.mappingparis.b2.B2SyncRunSummary
+import com.jilanos.mappingparis.b2.B2SyncStatus
+import com.jilanos.mappingparis.b2.normalizeBackendUrl
 import com.jilanos.mappingparis.data.CompletionStats
 import com.jilanos.mappingparis.data.LatLon
 import com.jilanos.mappingparis.data.SegmentRepository
@@ -82,6 +92,18 @@ data class ImportResult(
     val replaced: Boolean
 )
 
+data class B2IntegrationState(
+    val loading: Boolean = false,
+    val error: String? = null,
+    val message: String? = null,
+    val health: B2Health? = null,
+    val authStatus: B2AuthStatus? = null,
+    val syncStatus: B2SyncStatus? = null,
+    val proposalStatus: B2ProposalStatus? = null,
+    val lastSyncRun: B2SyncRunSummary? = null,
+    val lastProposalGeneration: B2ProposalGenerationSummary? = null
+)
+
 data class MappingParisUiState(
     val segments: List<StreetSegment> = emptyList(),
     val completionStates: Map<String, Boolean> = emptyMap(),
@@ -97,7 +119,10 @@ data class MappingParisUiState(
     val gpsMatchingStrictness: GpsMatchingStrictness = GpsMatchingStrictness.BALANCED,
     val gpsCoverageThresholdPercent: Int = 70,
     val currentLocation: UserLocation? = null,
-    val gpsProposedSegmentIds: Set<String> = emptySet()
+    val gpsProposedSegmentIds: Set<String> = emptySet(),
+    val backendBaseUrl: String = "",
+    val b2State: B2IntegrationState = B2IntegrationState(),
+    val b2Proposals: List<B2Proposal> = emptyList()
 ) {
     val selectedSegments: List<StreetSegment>
         get() = segments
@@ -182,6 +207,23 @@ data class MappingParisUiState(
     val availableArrondissements: List<String>
         get() = segments.map { it.arrondissement }.distinct().sortedBy { it.toIntOrNull() ?: 999 }
 
+    val b2ProposedSegmentIds: Set<String>
+        get() {
+            if (b2Proposals.isEmpty()) return emptySet()
+            val logicalIds = segments.map { it.logicalSegmentId }.toSet()
+            val visualToLogical = segments.associate { it.id to it.logicalSegmentId }
+            return b2Proposals
+                .filter { it.status == "proposed" }
+                .mapNotNull { proposal ->
+                    when {
+                        proposal.logicalSegmentId in logicalIds -> proposal.logicalSegmentId
+                        proposal.segmentId in visualToLogical -> visualToLogical[proposal.segmentId]
+                        else -> null
+                    }
+                }
+                .toSet()
+        }
+
     companion object {
         fun normalize(value: String): String {
             val decomposed = Normalizer.normalize(value.lowercase(), Normalizer.Form.NFD)
@@ -215,6 +257,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     )
     private val currentLocation = MutableStateFlow<UserLocation?>(null)
     private val gpsProposedSegmentIds = MutableStateFlow<Set<String>>(emptySet())
+    private val backendBaseUrl = MutableStateFlow(preferences.getString(KEY_BACKEND_BASE_URL, "").orEmpty())
+    private val b2State = MutableStateFlow(B2IntegrationState())
+    private val b2Proposals = MutableStateFlow<List<B2Proposal>>(emptyList())
     private val segments = MutableStateFlow(repository.loadSegments())
     private val gpsPath = mutableListOf<LatLon>()
     private val dismissedGpsProposalIds = mutableSetOf<String>()
@@ -236,7 +281,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             gpsMatchingStrictness,
             gpsCoverageThresholdPercent,
             currentLocation,
-            gpsProposedSegmentIds
+            gpsProposedSegmentIds,
+            backendBaseUrl,
+            b2State,
+            b2Proposals
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             MappingParisUiState(
@@ -254,7 +302,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 gpsMatchingStrictness = values[11] as GpsMatchingStrictness,
                 gpsCoverageThresholdPercent = values[12] as Int,
                 currentLocation = values[13] as UserLocation?,
-                gpsProposedSegmentIds = values[14] as Set<String>
+                gpsProposedSegmentIds = values[14] as Set<String>,
+                backendBaseUrl = values[15] as String,
+                b2State = values[16] as B2IntegrationState,
+                b2Proposals = values[17] as List<B2Proposal>
             )
         }.stateIn(
             scope = viewModelScope,
@@ -445,6 +496,120 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun setBackendBaseUrl(rawUrl: String) {
+        val normalized = normalizeBackendUrl(rawUrl)
+        if (normalized == null) {
+            b2State.update { it.copy(error = "URL invalide: utiliser http:// ou https://") }
+            return
+        }
+        preferences.edit().putString(KEY_BACKEND_BASE_URL, normalized).apply()
+        backendBaseUrl.value = normalized
+        b2State.update { it.copy(error = null, message = if (normalized.isBlank()) "Backend B2 non configure" else "URL backend enregistree") }
+    }
+
+    fun refreshB2Status() {
+        viewModelScope.launch {
+            runB2Operation("Statut B2 actualise") { client ->
+                val health = client.getHealth()
+                val authStatus = client.getAuthStatus()
+                val syncStatus = client.getSyncStatus()
+                val proposalStatus = client.getProposalStatus()
+                b2State.update {
+                    it.copy(
+                        health = health,
+                        authStatus = authStatus,
+                        syncStatus = syncStatus,
+                        proposalStatus = proposalStatus
+                    )
+                }
+            }
+        }
+    }
+
+    fun testB2Backend() {
+        viewModelScope.launch {
+            runB2Operation("Backend B2 joignable") { client ->
+                val health = client.getHealth()
+                b2State.update { it.copy(health = health) }
+            }
+        }
+    }
+
+    fun triggerB2StravaSync() {
+        viewModelScope.launch {
+            runB2Operation("Synchronisation Strava terminee") { client ->
+                val syncRun = client.triggerStravaSync()
+                val syncStatus = client.getSyncStatus()
+                b2State.update { it.copy(lastSyncRun = syncRun, syncStatus = syncStatus) }
+            }
+        }
+    }
+
+    fun triggerB2ProposalGeneration() {
+        viewModelScope.launch {
+            runB2Operation("Generation des propositions terminee") { client ->
+                val summary = client.triggerProposalGeneration()
+                val proposalStatus = client.getProposalStatus()
+                b2State.update { it.copy(lastProposalGeneration = summary, proposalStatus = proposalStatus) }
+            }
+        }
+    }
+
+    fun loadB2Proposals() {
+        viewModelScope.launch {
+            runB2Operation("Propositions chargees") { client ->
+                val proposals = client.getProposals(status = "proposed")
+                b2Proposals.value = proposals
+                b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+            }
+        }
+    }
+
+    fun acceptB2Proposal(proposalId: Int) {
+        viewModelScope.launch {
+            runB2Operation("Proposition acceptee cote backend") { client ->
+                client.acceptProposal(proposalId)
+                b2Proposals.value = client.getProposals(status = "proposed")
+                b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+            }
+        }
+    }
+
+    fun dismissB2Proposal(proposalId: Int) {
+        viewModelScope.launch {
+            runB2Operation("Proposition ignoree") { client ->
+                client.dismissProposal(proposalId)
+                b2Proposals.value = client.getProposals(status = "proposed")
+                b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+            }
+        }
+    }
+
+    private suspend fun runB2Operation(
+        successMessage: String,
+        block: suspend (B2ApiClient) -> Unit
+    ) {
+        val client = b2ClientOrNull()
+        if (client == null) {
+            b2State.update { it.copy(loading = false, error = "Configure d'abord l'URL backend B2", message = null) }
+            return
+        }
+        b2State.update { it.copy(loading = true, error = null, message = null) }
+        try {
+            block(client)
+            b2State.update { it.copy(loading = false, error = null, message = successMessage) }
+        } catch (exception: B2ApiException) {
+            b2State.update { it.copy(loading = false, error = exception.message ?: "Erreur backend B2", message = null) }
+        } catch (exception: Exception) {
+            b2State.update { it.copy(loading = false, error = exception.message ?: "Erreur inattendue B2", message = null) }
+        }
+    }
+
+    private fun b2ClientOrNull(): B2ApiClient? {
+        val normalized = normalizeBackendUrl(backendBaseUrl.value) ?: return null
+        return normalized.takeIf { it.isNotBlank() }?.let(::B2ApiClient)
+    }
+
     private fun parseImportedIds(rawJson: String): Set<String> {
         val root = JSONObject(rawJson)
         val array = when {
@@ -505,6 +670,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val KEY_GPS_ASSISTED_ENABLED = "gps_assisted_enabled"
         const val KEY_GPS_MATCHING_STRICTNESS = "gps_matching_strictness"
         const val KEY_GPS_COVERAGE_THRESHOLD_PERCENT = "gps_coverage_threshold_percent"
+        const val KEY_BACKEND_BASE_URL = "b2_backend_base_url"
         const val GPS_PATH_MIN_STEP_METERS = 12.0
         const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
         const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30

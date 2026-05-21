@@ -25,6 +25,7 @@ class SegmentNetworkOverlay(
     private var completionStates: Map<String, Boolean>,
     private var selectedSegmentIds: Set<String>,
     private var gpsProposedSegmentIds: Set<String>,
+    private var b2ProposedSegmentIds: Set<String>,
     private var mapMode: MapMode,
     private var showDebugOverlay: Boolean,
     private var onTapSegment: (String) -> Unit,
@@ -67,6 +68,7 @@ class SegmentNetworkOverlay(
         completionStates: Map<String, Boolean>,
         selectedSegmentIds: Set<String>,
         gpsProposedSegmentIds: Set<String>,
+        b2ProposedSegmentIds: Set<String>,
         mapMode: MapMode,
         showDebugOverlay: Boolean,
         onTapSegment: (String) -> Unit,
@@ -76,6 +78,7 @@ class SegmentNetworkOverlay(
         this.completionStates = completionStates
         this.selectedSegmentIds = selectedSegmentIds
         this.gpsProposedSegmentIds = gpsProposedSegmentIds
+        this.b2ProposedSegmentIds = b2ProposedSegmentIds
         this.mapMode = mapMode
         this.showDebugOverlay = showDebugOverlay
         this.onTapSegment = onTapSegment
@@ -86,6 +89,7 @@ class SegmentNetworkOverlay(
         if (shadow) return
 
         drawUnselectedSegments(canvas, mapView)
+        drawB2ProposedSegments(canvas, mapView)
         drawSelectedSegments(canvas, mapView)
         if (showDebugOverlay) drawDebugOverlay(canvas, mapView)
     }
@@ -144,6 +148,26 @@ class SegmentNetworkOverlay(
                 if (!segmentIntersectsViewport(segment, mapView)) return@forEach
                 drawSelectedSegment(canvas, mapView, segment)
             }
+        }
+    }
+
+    private fun drawB2ProposedSegments(canvas: Canvas, mapView: MapView) {
+        if (b2ProposedSegmentIds.isEmpty()) return
+        val style = b2ProposedStyle(mapView.zoomLevelDouble)
+        proposedHaloPaint.apply {
+            color = style.haloColor
+            strokeWidth = style.haloWidth
+        }
+        proposedPaint.apply {
+            color = style.color
+            strokeWidth = style.strokeWidth
+        }
+        segments.forEach { segment ->
+            if (segment.logicalSegmentId !in b2ProposedSegmentIds) return@forEach
+            if (segment.logicalSegmentId in selectedSegmentIds) return@forEach
+            if (!segmentIntersectsViewport(segment, mapView)) return@forEach
+            drawPolyline(canvas, mapView, segment.geometry, proposedHaloPaint)
+            drawPolyline(canvas, mapView, segment.geometry, proposedPaint)
         }
     }
 
@@ -293,6 +317,23 @@ class SegmentNetworkOverlay(
         canvas.drawText("${mapView.width} x ${mapView.height}px", x, y + 18f, debugTextPaint)
         canvas.drawLine(x, y + 42f, x + 48f, y + 42f, debugRulerPaint)
         canvas.drawText("48px", x + 62f, y + 50f, debugTextPaint)
+    }
+
+    private fun b2ProposedStyle(zoom: Double): SegmentPaintStyle {
+        return when (mapMode) {
+            MapMode.LIGHT -> SegmentPaintStyle(
+                color = Color.argb(178, 255, 138, 25),
+                strokeWidth = segmentStrokeWidth(zoom, base = 8.8f, highZoom = 12.4f),
+                haloColor = Color.argb(96, 255, 255, 255),
+                haloWidth = segmentStrokeWidth(zoom, base = 13.8f, highZoom = 18.0f)
+            )
+            MapMode.BLUE -> SegmentPaintStyle(
+                color = Color.argb(214, 255, 184, 58),
+                strokeWidth = segmentStrokeWidth(zoom, base = 8.8f, highZoom = 12.4f),
+                haloColor = Color.argb(112, 7, 31, 72),
+                haloWidth = segmentStrokeWidth(zoom, base = 13.8f, highZoom = 18.0f)
+            )
+        }
     }
 
     private fun segmentIntersectsViewport(segment: StreetSegment, mapView: MapView): Boolean {
