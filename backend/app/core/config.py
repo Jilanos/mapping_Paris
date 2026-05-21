@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     strava_sync_download_streams: bool = True
     strava_sync_sport_types: str = "Run,Ride"
     strava_token_refresh_margin_seconds: int = 300
+    segment_dataset_path: str = "../app/src/main/assets/paris_segments.geojson"
+    segment_dataset_version: str = ""
 
     model_config = SettingsConfigDict(
         env_prefix="",

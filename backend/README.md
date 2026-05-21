@@ -138,8 +138,51 @@ Current sync behavior:
 - never returns raw tokens, refresh tokens, client secrets, or encryption keys.
 
 Activity sync and stream download are implemented as a backend foundation only.
-Segment dataset ingestion, GPS-to-segment matching, proposal storage, proposal
-APIs, and Android review are still future tasks.
+GPS-to-segment matching, proposal storage, proposal APIs, and Android review
+are still future tasks.
+
+## Segment dataset ingestion
+
+The backend can ingest the same Paris segment GeoJSON used by the Android app:
+
+```text
+../app/src/main/assets/paris_segments.geojson
+```
+
+Run ingestion from the `backend/` folder:
+
+```powershell
+.\.venv\Scripts\python.exe -m app.tools.ingest_segments --source ..\app\src\main\assets\paris_segments.geojson
+```
+
+The command:
+
+- parses the GeoJSON FeatureCollection;
+- preserves `id` and `logical_segment_id`;
+- falls back to `id` when `logical_segment_id` is missing;
+- stores geometry as JSON text;
+- computes per-segment bounding boxes;
+- computes a SHA-256 dataset hash;
+- creates one active dataset version;
+- does not duplicate an already-ingested dataset hash.
+
+Read-only segment routes:
+
+- `GET /segments/status`
+- `GET /segments/datasets`
+- `GET /segments/search`
+
+Search examples:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/segments/status"
+Invoke-RestMethod "http://127.0.0.1:8000/segments/search?arrondissement=18&limit=20"
+Invoke-RestMethod "http://127.0.0.1:8000/segments/search?street_name=Lepic"
+```
+
+`/segments/search` returns metadata and bounding boxes by default. It does not
+return user progress, Strava tokens, or raw secrets. Full geometry is returned
+only with `include_geometry=true`.
 
 ## Run the server
 

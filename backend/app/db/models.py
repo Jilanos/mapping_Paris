@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Index, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -146,6 +146,58 @@ class SyncError(Base):
     step: Mapped[str] = mapped_column(String(64), nullable=False)
     error_type: Mapped[str] = mapped_column(String(128), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+
+
+class SegmentDatasetVersion(Base):
+    __tablename__ = "segment_dataset_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    dataset_hash: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    source_path: Mapped[str] = mapped_column(Text, nullable=False)
+    source_file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_file_size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    segment_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    logical_segment_count: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, index=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class B2StreetSegment(Base):
+    __tablename__ = "b2_street_segments"
+    __table_args__ = (
+        Index("ix_b2_segments_dataset_segment", "dataset_version_id", "segment_id"),
+        Index("ix_b2_segments_dataset_logical", "dataset_version_id", "logical_segment_id"),
+        Index("ix_b2_segments_bbox", "min_lat", "min_lon", "max_lat", "max_lon"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    dataset_version_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("segment_dataset_versions.id"),
+        nullable=False,
+        index=True,
+    )
+    segment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    logical_segment_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    street_name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    arrondissement: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    length_meters: Mapped[float] = mapped_column(Float, nullable=False)
+    accessibility: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    geometry_json: Mapped[str] = mapped_column(Text, nullable=False)
+    min_lat: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    min_lon: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    max_lat: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    max_lon: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=utc_now,
