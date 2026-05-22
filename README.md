@@ -112,11 +112,24 @@ progress is changed only after an explicit Android user action. `Tout valider`
 applies only to currently loaded proposed proposals, not every proposal that may
 exist on the backend.
 
+The Android review list is filtered before display. It only shows new segments
+that can actually be validated locally:
+
+- proposals recognized in the Android segment dataset;
+- proposals mapped to a local logical segment;
+- proposals whose local logical segment is not already completed;
+- one best proposal per local logical segment.
+
+Non-recognized proposals, already completed local segments, and duplicate
+backend proposals stay hidden from the main review list. They are not deleted
+from the backend silently.
+
 The B2 panel includes diagnostics to explain proposal/map differences:
-proposals loaded, proposed proposals, locally matched proposals, unmatched
-proposals, highlighted logical groups, and highlighted local geometries. A large
-proposal list can collapse to fewer orange highlights because several Strava
-activities can propose the same logical street segment.
+backend proposals loaded, non-recognized hidden proposals, already completed
+hidden proposals, reviewable proposals, highlighted logical groups, and
+highlighted local geometries. A large proposal list can collapse to fewer orange
+highlights because several Strava activities can propose the same logical street
+segment.
 
 Local E2E checks:
 

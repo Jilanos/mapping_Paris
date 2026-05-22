@@ -109,8 +109,11 @@ data class B2ProposalDiagnostics(
     val proposedLoaded: Int = 0,
     val proposalsWithSegmentId: Int = 0,
     val proposalsWithLogicalSegmentId: Int = 0,
-    val proposalsMatchedLocally: Int = 0,
-    val proposalsUnmatchedLocally: Int = 0,
+    val proposalsUnrecognizedHidden: Int = 0,
+    val proposalsAlreadyCompletedHidden: Int = 0,
+    val duplicateProposalsHidden: Int = 0,
+    val hiddenBackendProposals: Int = 0,
+    val reviewableProposals: Int = 0,
     val highlightedLogicalSegments: Int = 0,
     val highlightedGeometries: Int = 0
 )
@@ -218,29 +221,44 @@ data class MappingParisUiState(
     val availableArrondissements: List<String>
         get() = segments.map { it.arrondissement }.distinct().sortedBy { it.toIntOrNull() ?: 999 }
 
+    val b2ReviewProposals: List<B2Proposal>
+        get() = filterReviewableB2Proposals(
+            proposals = b2Proposals,
+            segments = segments,
+            completionStates = completionStates
+        )
+
     val b2ProposedSegmentIds: Set<String>
         get() {
-            return b2Proposals
-                .filter { it.status == "proposed" }
+            return b2ReviewProposals
                 .mapNotNull { proposal ->
                     resolveB2ProposalLogicalId(proposal = proposal, segments = segments)
                 }
-                .filter { completionStates[it] != true }
                 .toSet()
         }
 
     val b2ProposalDiagnostics: B2ProposalDiagnostics
         get() {
             val proposed = b2Proposals.filter { it.status == "proposed" }
-            val matched = proposed.mapNotNull { resolveB2ProposalLogicalId(it, segments) }
+            val recognized = proposed.mapNotNull { proposal ->
+                resolveB2ProposalLogicalId(proposal, segments)?.let { logicalId -> proposal to logicalId }
+            }
+            val unrecognizedHidden = proposed.size - recognized.size
+            val alreadyCompletedHidden = recognized.count { (_, logicalId) -> completionStates[logicalId] == true }
+            val reviewable = b2ReviewProposals
+            val duplicateHidden = (recognized.size - alreadyCompletedHidden - reviewable.size).coerceAtLeast(0)
             val highlighted = b2ProposedSegmentIds
+            val hidden = unrecognizedHidden + alreadyCompletedHidden + duplicateHidden
             return B2ProposalDiagnostics(
                 proposalsLoaded = b2Proposals.size,
                 proposedLoaded = proposed.size,
                 proposalsWithSegmentId = proposed.count { it.segmentId.isNotBlank() },
                 proposalsWithLogicalSegmentId = proposed.count { it.logicalSegmentId.isNotBlank() },
-                proposalsMatchedLocally = matched.size,
-                proposalsUnmatchedLocally = proposed.size - matched.size,
+                proposalsUnrecognizedHidden = unrecognizedHidden,
+                proposalsAlreadyCompletedHidden = alreadyCompletedHidden,
+                duplicateProposalsHidden = duplicateHidden,
+                hiddenBackendProposals = hidden,
+                reviewableProposals = reviewable.size,
                 highlightedLogicalSegments = highlighted.size,
                 highlightedGeometries = segments.count { it.logicalSegmentId in highlighted }
             )
@@ -590,7 +608,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     fun validateB2Proposal(proposalId: Int) {
         viewModelScope.launch {
             runB2Operation("Proposition validee et segment marque parcouru") { client ->
-                val proposal = b2Proposals.value.firstOrNull { it.id == proposalId }
+                val proposal = reviewableB2ProposalsSnapshot().firstOrNull { it.id == proposalId }
                     ?: throw B2ApiException("Proposition introuvable localement")
                 val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
                     ?: throw B2ApiException("Proposition non associee a un segment local: validation bloquee")
@@ -621,7 +639,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             }
             if (b2State.value.loading) return@launch
             b2State.update { it.copy(loading = true, error = null, message = null) }
-            val loaded = b2Proposals.value.filter { it.status == "proposed" }
+            val loaded = reviewableB2ProposalsSnapshot()
             var accepted = 0
             var markedCompleted = 0
             var failed = 0
@@ -676,7 +694,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             }
             if (b2State.value.loading) return@launch
             b2State.update { it.copy(loading = true, error = null, message = null) }
-            val loaded = b2Proposals.value.filter { it.status == "proposed" }
+            val loaded = reviewableB2ProposalsSnapshot()
             var dismissed = 0
             var failed = 0
             loaded.forEach { proposal ->
@@ -732,6 +750,14 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private fun b2ClientOrNull(): B2ApiClient? {
         val normalized = normalizeBackendUrl(backendBaseUrl.value) ?: return null
         return normalized.takeIf { it.isNotBlank() }?.let(::B2ApiClient)
+    }
+
+    private fun reviewableB2ProposalsSnapshot(): List<B2Proposal> {
+        return filterReviewableB2Proposals(
+            proposals = b2Proposals.value,
+            segments = segments.value,
+            completionStates = completionStatesSnapshot()
+        )
     }
 
     private fun parseImportedIds(rawJson: String): Set<String> {
@@ -908,4 +934,40 @@ fun resolveB2ProposalLogicalId(proposal: B2Proposal, segments: List<StreetSegmen
     }
     if (proposal.segmentId.isBlank()) return null
     return segments.firstOrNull { it.id == proposal.segmentId }?.logicalSegmentId
+}
+
+fun filterReviewableB2Proposals(
+    proposals: List<B2Proposal>,
+    segments: List<StreetSegment>,
+    completionStates: Map<String, Boolean>
+): List<B2Proposal> {
+    val bestByLogicalId = linkedMapOf<String, B2Proposal>()
+    proposals
+        .filter { it.status == "proposed" }
+        .forEach { proposal ->
+            val logicalId = resolveB2ProposalLogicalId(proposal, segments) ?: return@forEach
+            if (completionStates[logicalId] == true) return@forEach
+            val current = bestByLogicalId[logicalId]
+            if (current == null || proposalIsBetter(proposal, current)) {
+                bestByLogicalId[logicalId] = proposal
+            }
+        }
+    return bestByLogicalId.values.sortedWith(
+        compareByDescending<B2Proposal> { it.confidenceScore }
+            .thenByDescending { it.coverageRatio }
+            .thenBy { it.avgDistanceMeters }
+            .thenBy { it.streetName }
+            .thenBy { it.id }
+    )
+}
+
+private fun proposalIsBetter(candidate: B2Proposal, current: B2Proposal): Boolean {
+    return compareValuesBy(
+        candidate,
+        current,
+        { it.confidenceScore },
+        { it.coverageRatio },
+        { -it.avgDistanceMeters },
+        { -it.id.toDouble() }
+    ) > 0
 }

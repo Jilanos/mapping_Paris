@@ -94,6 +94,21 @@ flowchart TD
 
 ## Report
 
-Implemented Android-side validation hardening and diagnostics. Android unit test
-coverage remains limited because this project currently has no local JVM Android
-test harness configured.
+Implemented Android-side validation hardening and diagnostics:
+
+- main Strava review list now shows only local, not-yet-completed,
+  deduplicated proposals;
+- non-recognized backend proposals are hidden by default;
+- proposals for already completed local segments are hidden by default;
+- duplicate proposals for the same logical segment are grouped by keeping the
+  best proposal;
+- orange map highlights now use the clean review list only;
+- `Tout valider` and `Tout ignorer` act only on the clean review list;
+- settings are reordered into progression, GPS, Strava, zoom reference, and
+  color mode sections;
+- GPS sliders remain visible but disabled when GPS is off;
+- street search is no longer exposed from the map controls;
+- the old search bubble has been replaced by a statistics button.
+
+Android unit test coverage remains limited because this project currently has no
+local JVM Android test harness configured.

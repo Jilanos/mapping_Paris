@@ -222,7 +222,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         filterActive = uiState.filter.isActive,
                         gpsActive = uiState.gpsAssistedEnabled,
                         onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
-                        onSearch = { activePanel = if (activePanel == OverlayPanel.SEARCH) OverlayPanel.NONE else OverlayPanel.SEARCH },
+                        onStats = { activePanel = OverlayPanel.STATS },
                         onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
                         showGps = activePanel == OverlayPanel.NONE,
                         onGps = {
@@ -254,11 +254,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
 
                 when (activePanel) {
                     OverlayPanel.MENU -> MainMenu(
-                        mapMode = uiState.mapMode,
-                        onMapModeChange = viewModel::setMapMode,
                         onSettings = { activePanel = OverlayPanel.SETTINGS },
-                        onStats = { activePanel = OverlayPanel.STATS },
-                        onB2 = { activePanel = OverlayPanel.B2 },
                         onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.TopStart)
@@ -304,6 +300,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
+                        mapMode = uiState.mapMode,
+                        onMapModeChange = viewModel::setMapMode,
+                        onStravaProposals = { activePanel = OverlayPanel.B2 },
                         showDebugOverlay = uiState.showMapDebugOverlay,
                         onDebugOverlayChange = viewModel::setMapDebugOverlayEnabled,
                         gpsAssistedEnabled = uiState.gpsAssistedEnabled,
@@ -335,7 +334,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     OverlayPanel.B2 -> B2ReviewView(
                         backendBaseUrl = uiState.backendBaseUrl,
                         b2State = uiState.b2State,
-                        proposals = uiState.b2Proposals,
+                        proposals = uiState.b2ReviewProposals,
                         diagnostics = uiState.b2ProposalDiagnostics,
                         highlightedProposalCount = uiState.b2ProposedSegmentIds.size,
                         onBackendUrlChange = viewModel::setBackendBaseUrl,
@@ -701,7 +700,7 @@ private fun MapTopControls(
     filterActive: Boolean,
     gpsActive: Boolean,
     onMenu: () -> Unit,
-    onSearch: () -> Unit,
+    onStats: () -> Unit,
     onFilter: () -> Unit,
     showGps: Boolean,
     onGps: () -> Unit,
@@ -722,9 +721,9 @@ private fun MapTopControls(
                 onClick = onMenu
             )
             MapControlButton(
-                kind = MapControlKind.SEARCH,
-                active = activePanel == OverlayPanel.SEARCH,
-                onClick = onSearch
+                kind = MapControlKind.STATS,
+                active = activePanel == OverlayPanel.STATS,
+                onClick = onStats
             )
         }
         Column(
@@ -825,17 +824,22 @@ private fun MapControlIcon(kind: MapControlKind, active: Boolean) {
                 }
             }
 
-            MapControlKind.SEARCH -> {
-                drawCircle(
-                    color = color,
-                    radius = size.minDimension * 0.28f,
-                    center = Offset(size.width * 0.43f, size.height * 0.42f),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke)
-                )
+            MapControlKind.STATS -> {
+                val bars = listOf(0.72f, 0.48f, 0.28f)
+                bars.forEachIndexed { index, top ->
+                    val left = size.width * (0.24f + index * 0.2f)
+                    val right = left + size.width * 0.11f
+                    drawRoundRect(
+                        color = if (index == 1) accent else color,
+                        topLeft = Offset(left, size.height * top),
+                        size = androidx.compose.ui.geometry.Size(right - left, size.height * (0.82f - top)),
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3f, 3f)
+                    )
+                }
                 drawLine(
                     color = color,
-                    start = Offset(size.width * 0.62f, size.height * 0.62f),
-                    end = Offset(size.width * 0.86f, size.height * 0.86f),
+                    start = Offset(size.width * 0.16f, size.height * 0.84f),
+                    end = Offset(size.width * 0.86f, size.height * 0.84f),
                     strokeWidth = stroke,
                     cap = StrokeCap.Round
                 )
@@ -903,18 +907,14 @@ private fun MapControlIcon(kind: MapControlKind, active: Boolean) {
 
 private enum class MapControlKind {
     MENU,
-    SEARCH,
+    STATS,
     FILTER,
     GPS
 }
 
 @Composable
 private fun MainMenu(
-    mapMode: MapMode,
-    onMapModeChange: (MapMode) -> Unit,
     onSettings: () -> Unit,
-    onStats: () -> Unit,
-    onB2: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -931,21 +931,7 @@ private fun MainMenu(
                 Text("Menu", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                 TextButton(onClick = onClose) { Text("Fermer") }
             }
-            Text("Mode carte", style = MaterialTheme.typography.labelLarge)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                RadioButton(selected = mapMode == MapMode.LIGHT, onClick = { onMapModeChange(MapMode.LIGHT) })
-                Text("Light")
-                Spacer(Modifier.width(18.dp))
-                RadioButton(selected = mapMode == MapMode.BLUE, onClick = { onMapModeChange(MapMode.BLUE) })
-                Text("Blue")
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onSettings) { Text("Parametres") }
-                OutlinedButton(onClick = onStats) { Text("Statistiques") }
-            }
-            OutlinedButton(onClick = onB2, modifier = Modifier.fillMaxWidth()) {
-                Text("Propositions Strava B2")
-            }
+            Button(onClick = onSettings, modifier = Modifier.fillMaxWidth()) { Text("Parametres") }
         }
     }
 }
@@ -1077,11 +1063,12 @@ private fun FilterPanel(
 private fun FilterCheckbox(
     checked: Boolean,
     label: String,
-    onCheckedChange: (Boolean) -> Unit
+    onCheckedChange: (Boolean) -> Unit,
+    enabled: Boolean = true
 ) {
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked = checked, onCheckedChange = onCheckedChange)
-        Text(label)
+        Checkbox(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
+        Text(label, color = if (enabled) Color.Unspecified else Color(0xFF8B949E))
     }
 }
 
@@ -1103,6 +1090,9 @@ private fun SettingsView(
     onExport: () -> Unit,
     onImport: () -> Unit,
     onReset: () -> Unit,
+    mapMode: MapMode,
+    onMapModeChange: (MapMode) -> Unit,
+    onStravaProposals: () -> Unit,
     showDebugOverlay: Boolean,
     onDebugOverlayChange: (Boolean) -> Unit,
     gpsAssistedEnabled: Boolean,
@@ -1120,13 +1110,19 @@ private fun SettingsView(
         shape = RoundedCornerShape(22.dp)
     ) {
         Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            modifier = Modifier
+                .padding(16.dp)
+                .heightIn(max = 680.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            HeaderRow(title = "Progression locale", onClose = onClose)
+            HeaderRow(title = "Parametres", onClose = onClose)
+            SettingsSectionTitle("Progression locale")
             Button(onClick = onExport, modifier = Modifier.fillMaxWidth()) { Text("Exporter la progression") }
             OutlinedButton(onClick = onImport, modifier = Modifier.fillMaxWidth()) { Text("Importer la progression") }
             OutlinedButton(onClick = onReset, modifier = Modifier.fillMaxWidth()) { Text("Reinitialiser la progression") }
+
+            SettingsSectionTitle("Suivi GPS")
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -1138,43 +1134,68 @@ private fun SettingsView(
                 }
                 Switch(checked = gpsAssistedEnabled, onCheckedChange = onGpsAssistedChange)
             }
-            if (gpsAssistedEnabled) {
-                Text("Distance max proposition", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
-                GpsMatchingStrictness.entries.forEach { strictness ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(
-                            selected = gpsMatchingStrictness == strictness,
-                            onClick = { onGpsMatchingStrictnessChange(strictness) }
-                        )
-                        Text(strictness.label)
-                    }
-                }
-                Text(
-                    "Couverture minimale: $gpsCoverageThresholdPercent%",
-                    style = MaterialTheme.typography.labelLarge,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Slider(
-                    value = gpsCoverageThresholdPercent.toFloat(),
-                    onValueChange = { value ->
-                        val stepped = (value / 5f).roundToInt() * 5
-                        onGpsCoverageThresholdChange(stepped)
-                    },
-                    valueRange = 30f..95f,
-                    steps = 12,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Text(
-                    "Un segment est propose apres deux positions couvrant au moins cette part de sa longueur.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF52606D)
-                )
+            val gpsTextColor = if (gpsAssistedEnabled) Color.Unspecified else Color(0xFF8B949E)
+            Text(
+                "Parcours minimal: $gpsCoverageThresholdPercent%",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = gpsTextColor
+            )
+            Slider(
+                value = gpsCoverageThresholdPercent.toFloat(),
+                onValueChange = { value ->
+                    val stepped = (value / 5f).roundToInt() * 5
+                    onGpsCoverageThresholdChange(stepped)
+                },
+                valueRange = 30f..95f,
+                steps = 12,
+                enabled = gpsAssistedEnabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                "Part minimale du segment a parcourir avant proposition GPS.",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (gpsAssistedEnabled) Color(0xFF52606D) else Color(0xFF8B949E)
+            )
+            val strictnessIndex = GpsMatchingStrictness.entries.indexOf(gpsMatchingStrictness).coerceAtLeast(0)
+            Text(
+                "Distance max de proposition: ${gpsMatchingStrictness.label}",
+                style = MaterialTheme.typography.labelLarge,
+                fontWeight = FontWeight.SemiBold,
+                color = gpsTextColor
+            )
+            Slider(
+                value = strictnessIndex.toFloat(),
+                onValueChange = { value ->
+                    val index = value.roundToInt().coerceIn(0, GpsMatchingStrictness.entries.lastIndex)
+                    onGpsMatchingStrictnessChange(GpsMatchingStrictness.entries[index])
+                },
+                valueRange = 0f..GpsMatchingStrictness.entries.lastIndex.toFloat(),
+                steps = (GpsMatchingStrictness.entries.size - 2).coerceAtLeast(0),
+                enabled = gpsAssistedEnabled,
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            SettingsSectionTitle("Propositions Strava")
+            OutlinedButton(onClick = onStravaProposals, modifier = Modifier.fillMaxWidth()) {
+                Text("Ouvrir les propositions Strava B2")
             }
+
+            SettingsSectionTitle("Repere zoom carte")
             FilterCheckbox(
                 checked = showDebugOverlay,
-                label = "Reperes zoom carte",
+                label = "Afficher les reperes zoom",
                 onCheckedChange = onDebugOverlayChange
             )
+
+            SettingsSectionTitle("Mode de couleur")
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                RadioButton(selected = mapMode == MapMode.LIGHT, onClick = { onMapModeChange(MapMode.LIGHT) })
+                Text("Light")
+                Spacer(Modifier.width(18.dp))
+                RadioButton(selected = mapMode == MapMode.BLUE, onClick = { onMapModeChange(MapMode.BLUE) })
+                Text("Blue")
+            }
             Text(
                 versionLabel,
                 style = MaterialTheme.typography.bodySmall,
@@ -1183,6 +1204,16 @@ private fun SettingsView(
             )
         }
     }
+}
+
+@Composable
+private fun SettingsSectionTitle(title: String) {
+    Text(
+        title,
+        style = MaterialTheme.typography.titleSmall,
+        fontWeight = FontWeight.SemiBold,
+        color = Color(0xFF17324D)
+    )
 }
 
 @Composable
@@ -1290,7 +1321,7 @@ private fun B2ReviewView(
                 }
             }
 
-            Text("A verifier", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text("Nouveaux segments proposes", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -1301,7 +1332,7 @@ private fun B2ReviewView(
                 if (proposals.isEmpty()) {
                     Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Aucune proposition chargee.",
+                            "Aucun nouveau segment a examiner. Les propositions non reconnues ou deja parcourues ont ete masquees.",
                             modifier = Modifier.padding(14.dp),
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -1353,9 +1384,9 @@ private fun B2ReviewView(
                 Text(
                     "Cette action marquera tous les segments proposes actuellement charges comme parcourus dans votre progression locale. " +
                         "Cette action peut modifier fortement vos statistiques.\n\n" +
-                        "Propositions a valider: ${diagnostics.proposedLoaded}\n" +
-                        "Segments locaux correspondants: ${diagnostics.highlightedLogicalSegments}\n" +
-                        "Propositions non mappees: ${diagnostics.proposalsUnmatchedLocally}"
+                        "Nouveaux segments a valider: ${diagnostics.reviewableProposals}\n" +
+                        "Propositions backend masquees: ${diagnostics.hiddenBackendProposals}\n" +
+                        "Deja parcourues masquees: ${diagnostics.proposalsAlreadyCompletedHidden}"
                 )
             },
             confirmButton = {
@@ -1381,7 +1412,7 @@ private fun B2ReviewView(
             onDismissRequest = { showDismissAllConfirmation = false },
             title = { Text("Tout ignorer ?") },
             text = {
-                Text("Cette action ignorera toutes les propositions actuellement chargees. Votre progression locale ne sera pas modifiee.")
+                Text("Cette action ignorera les nouveaux segments actuellement a examiner. Les propositions non reconnues ou deja parcourues restent masquees.")
             },
             confirmButton = {
                 TextButton(
@@ -1426,17 +1457,22 @@ private fun B2StatusText(
         }
         b2State.proposalStatus?.let { status ->
             Text(
-                "Propositions: ${status.proposedCount} a verifier, ${status.acceptedCount} acceptees, ${status.dismissedCount} ignorees",
+                "Backend: ${status.proposedCount} proposees, ${status.acceptedCount} acceptees, ${status.dismissedCount} ignorees",
                 style = MaterialTheme.typography.bodySmall
             )
         }
         Text(
-            "Diagnostics: ${diagnostics.proposalsLoaded} chargees, ${diagnostics.proposedLoaded} proposees, ${diagnostics.proposalsMatchedLocally} mappees, ${diagnostics.proposalsUnmatchedLocally} non mappees",
+            "Propositions backend chargees: ${diagnostics.proposalsLoaded}",
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF52606D)
         )
         Text(
-            "Surlignage: $highlightedProposalCount groupes logiques, ${diagnostics.highlightedGeometries} geometries locales",
+            "Non reconnues cachees: ${diagnostics.proposalsUnrecognizedHidden} - Deja parcourues cachees: ${diagnostics.proposalsAlreadyCompletedHidden}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF52606D)
+        )
+        Text(
+            "A examiner: ${diagnostics.reviewableProposals} - Segments orange affiches: $highlightedProposalCount (${diagnostics.highlightedGeometries} geometries)",
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF52606D)
         )
