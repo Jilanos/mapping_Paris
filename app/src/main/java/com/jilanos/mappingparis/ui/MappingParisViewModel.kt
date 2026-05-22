@@ -106,7 +106,9 @@ data class B2IntegrationState(
     val proposalScanTotal: Int = 0,
     val proposalScanPages: Int = 0,
     val proposalScanHasMore: Boolean = false,
-    val proposalScanNextOffset: Int? = null
+    val proposalScanNextOffset: Int? = null,
+    val stageLabel: String? = null,
+    val stageProgress: Float? = null
 )
 
 data class B2ProposalDiagnostics(
@@ -144,7 +146,8 @@ data class MappingParisUiState(
     val gpsProposedSegmentIds: Set<String> = emptySet(),
     val backendBaseUrl: String = "",
     val b2State: B2IntegrationState = B2IntegrationState(),
-    val b2Proposals: List<B2Proposal> = emptyList()
+    val b2Proposals: List<B2Proposal> = emptyList(),
+    val b2MapHighlightsEnabled: Boolean = true
 ) {
     val selectedSegments: List<StreetSegment>
         get() = segments
@@ -238,6 +241,7 @@ data class MappingParisUiState(
 
     val b2ProposedSegmentIds: Set<String>
         get() {
+            if (!b2MapHighlightsEnabled) return emptySet()
             return b2ReviewProposals
                 .mapNotNull { proposal ->
                     resolveB2ProposalLogicalId(proposal = proposal, segments = segments)
@@ -311,6 +315,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private val backendBaseUrl = MutableStateFlow(preferences.getString(KEY_BACKEND_BASE_URL, "").orEmpty())
     private val b2State = MutableStateFlow(B2IntegrationState())
     private val b2Proposals = MutableStateFlow<List<B2Proposal>>(emptyList())
+    private val b2MapHighlightsEnabled = MutableStateFlow(
+        preferences.getBoolean(KEY_B2_MAP_HIGHLIGHTS_ENABLED, true)
+    )
     private val segments = MutableStateFlow(repository.loadSegments())
     private val gpsPath = mutableListOf<LatLon>()
     private val dismissedGpsProposalIds = mutableSetOf<String>()
@@ -336,7 +343,8 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             gpsProposedSegmentIds,
             backendBaseUrl,
             b2State,
-            b2Proposals
+            b2Proposals,
+            b2MapHighlightsEnabled
         ) { values ->
             @Suppress("UNCHECKED_CAST")
             MappingParisUiState(
@@ -357,7 +365,8 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 gpsProposedSegmentIds = values[14] as Set<String>,
                 backendBaseUrl = values[15] as String,
                 b2State = values[16] as B2IntegrationState,
-                b2Proposals = values[17] as List<B2Proposal>
+                b2Proposals = values[17] as List<B2Proposal>,
+                b2MapHighlightsEnabled = values[18] as Boolean
             )
         }.stateIn(
             scope = viewModelScope,
@@ -516,7 +525,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.3.4")
+            .put("appVersion", "0.3.5")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
@@ -597,6 +606,74 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    fun importB2StravaActivities() {
+        viewModelScope.launch {
+            val client = b2ClientOrNull()
+            if (client == null) {
+                b2State.update { it.copy(loading = false, error = "Configure d'abord l'URL backend B2", message = null) }
+                return@launch
+            }
+            if (b2State.value.loading) return@launch
+            b2State.update { it.copy(loading = true, error = null, message = null, stageLabel = "Connexion au backend...", stageProgress = 0.05f) }
+            try {
+                val health = client.getHealth()
+                b2State.update { it.copy(health = health, stageLabel = "Verification de Strava...", stageProgress = 0.15f) }
+                val authStatus = client.getAuthStatus()
+                if (!authStatus.connected) {
+                    b2State.update {
+                        it.copy(
+                            loading = false,
+                            authStatus = authStatus,
+                            error = "Strava n'est pas connecte. Ouvre l'URL backend /auth/strava/start pour autoriser Strava.",
+                            stageLabel = null,
+                            stageProgress = null
+                        )
+                    }
+                    return@launch
+                }
+                b2State.update { it.copy(authStatus = authStatus, stageLabel = "Synchronisation des activites Strava...", stageProgress = 0.30f) }
+                val targetMaxPages = nextB2LoadMoreMaxPages()
+                val syncRun = client.triggerStravaSync(maxPages = targetMaxPages)
+                b2State.update { it.copy(lastSyncRun = syncRun, stageLabel = "Analyse des activites pour propositions...", stageProgress = 0.55f) }
+                val proposalGeneration = client.triggerProposalGeneration(
+                    onlyUnprocessed = true,
+                    maxActivities = B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES
+                )
+                b2State.update { it.copy(lastProposalGeneration = proposalGeneration, stageLabel = "Chargement et filtrage des propositions...", stageProgress = 0.75f) }
+                applyB2ProposalScan(client, startOffset = 0, append = false)
+                val reviewableCount = reviewableB2ProposalsSnapshot().size
+                if (reviewableCount > MAX_PROPOSED_SEGMENTS_TO_RENDER_ON_MAP && b2MapHighlightsEnabled.value) {
+                    setB2MapHighlightsEnabled(false)
+                }
+                b2LoadMoreMaxPages = targetMaxPages
+                val syncStatus = client.getSyncStatus()
+                val proposalStatus = client.getProposalStatus()
+                val generatedCount = proposalGeneration.proposalsCreated + proposalGeneration.proposalsUpdated
+                val baseSummary = "Termine: $reviewableCount nouveaux segments a examiner. ${syncRun.activitiesCreated} activites importees, ${syncRun.streamsDownloaded} traces, ${proposalGeneration.activitiesProcessed} activites analysees, $generatedCount propositions creees/mises a jour."
+                val mapSummary = if (reviewableCount > MAX_PROPOSED_SEGMENTS_TO_RENDER_ON_MAP) {
+                    " Trop de segments proposes pour un affichage fluide. L'affichage carte a ete desactive."
+                } else {
+                    ""
+                }
+                b2State.update {
+                    it.copy(
+                        loading = false,
+                        error = null,
+                        message = baseSummary + mapSummary,
+                        syncStatus = syncStatus,
+                        proposalStatus = proposalStatus,
+                        stageLabel = "Termine : $reviewableCount nouveaux segments a examiner",
+                        stageProgress = 1f
+                    )
+                }
+            } catch (exception: B2ApiException) {
+                b2State.update { it.copy(loading = false, error = exception.message ?: "Erreur backend B2", message = null, stageLabel = null, stageProgress = null) }
+            } catch (exception: Exception) {
+                b2State.update { it.copy(loading = false, error = exception.message ?: "Erreur inattendue B2", message = null, stageLabel = null, stageProgress = null) }
+            }
+        }
+    }
+
     fun loadMoreB2Activities() {
         viewModelScope.launch {
             val client = b2ClientOrNull()
@@ -662,6 +739,22 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             runB2Operation("Propositions chargees") { client ->
                 applyB2ProposalScan(client, startOffset = 0, append = false)
                 b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+            }
+        }
+    }
+
+    fun setB2MapHighlightsEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_B2_MAP_HIGHLIGHTS_ENABLED, enabled).apply()
+        b2MapHighlightsEnabled.value = enabled
+    }
+
+    fun resetB2ProcessedActivities() {
+        viewModelScope.launch {
+            runB2Operation("Activites Strava traitees reinitialisees") { client ->
+                val summary = client.resetProposalProcessing()
+                b2State.update {
+                    it.copy(message = "${summary.processingRecordsReset} activites traitees reinitialisees")
+                }
             }
         }
     }
@@ -974,6 +1067,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val KEY_GPS_MATCHING_STRICTNESS = "gps_matching_strictness"
         const val KEY_GPS_COVERAGE_THRESHOLD_PERCENT = "gps_coverage_threshold_percent"
         const val KEY_BACKEND_BASE_URL = "b2_backend_base_url"
+        const val KEY_B2_MAP_HIGHLIGHTS_ENABLED = "b2_map_highlights_enabled"
         const val GPS_PATH_MIN_STEP_METERS = 12.0
         const val DEFAULT_B2_SYNC_MAX_PAGES = 1
         const val B2_LOAD_MORE_FIRST_MAX_PAGES = 3
@@ -983,6 +1077,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val B2_PROPOSAL_SCAN_PAGE_SIZE = 500
         const val B2_PROPOSAL_SCAN_TARGET_REVIEWABLE = 100
         const val B2_PROPOSAL_SCAN_MAX_PROPOSALS = 2000
+        const val MAX_PROPOSED_SEGMENTS_TO_RENDER_ON_MAP = 300
         const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
         const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30
         const val MAX_GPS_COVERAGE_THRESHOLD_PERCENT = 95

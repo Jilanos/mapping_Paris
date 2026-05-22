@@ -234,6 +234,17 @@ dataset are skipped. The response reports how many activities had streams, how
 many already had proposals, how many were processed, and how many proposals were
 created, updated, or skipped.
 
+The backend also stores processing markers per Strava activity and active
+dataset version. By default, proposal generation processes only activities that
+have not already been examined for the active dataset. To clear those markers
+without deleting activities, streams, or proposals:
+
+```powershell
+Invoke-RestMethod -Method Post "http://127.0.0.1:8000/proposals/processing/reset"
+```
+
+Accepted and dismissed proposals remain protected after a processing reset.
+
 Matching assumptions:
 
 - GPS stream points are compared with segment polylines using a lightweight

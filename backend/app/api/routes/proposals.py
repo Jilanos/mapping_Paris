@@ -7,6 +7,8 @@ from app.schemas.proposals import (
     ProposalGenerationRequest,
     ProposalGenerationSummary,
     ProposalMutationResponse,
+    ProposalProcessingResetRequest,
+    ProposalProcessingResetResponse,
     ProposalsResponse,
     ProposalStatusResponse,
 )
@@ -22,7 +24,7 @@ def generate_proposals(
 ) -> ProposalGenerationSummary:
     try:
         return ProposalService(db, get_settings()).generate(
-            only_unprocessed=request.only_unprocessed if request else False,
+            only_unprocessed=request.only_unprocessed if request else True,
             max_activities=request.max_activities if request else None,
         )
     except ProposalGenerationError as exc:
@@ -62,6 +64,19 @@ def list_proposals(
 @router.get("/status", response_model=ProposalStatusResponse)
 def proposal_status(db: Session = Depends(get_db)) -> ProposalStatusResponse:
     return ProposalService(db, get_settings()).status()
+
+
+@router.post("/processing/reset", response_model=ProposalProcessingResetResponse)
+def reset_proposal_processing(
+    request: ProposalProcessingResetRequest | None = None,
+    db: Session = Depends(get_db),
+) -> ProposalProcessingResetResponse:
+    try:
+        return ProposalService(db, get_settings()).reset_processing(
+            include_proposals=request.include_proposals if request else False
+        )
+    except ProposalGenerationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{proposal_id}/dismiss", response_model=ProposalMutationResponse)

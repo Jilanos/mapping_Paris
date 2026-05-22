@@ -60,6 +60,12 @@ data class B2ProposalStatus(
     val latestProposalCreatedAt: String?
 )
 
+data class B2ProcessingResetSummary(
+    val datasetVersionId: Int?,
+    val processingRecordsReset: Int,
+    val proposalsDeleted: Int
+)
+
 data class B2Proposal(
     val id: Int,
     val stravaActivityId: String,

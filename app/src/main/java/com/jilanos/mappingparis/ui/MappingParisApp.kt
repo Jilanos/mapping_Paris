@@ -89,7 +89,6 @@ import org.osmdroid.views.MapView
 
 private enum class OverlayPanel {
     NONE,
-    MENU,
     SEARCH,
     FILTER,
     SETTINGS,
@@ -221,7 +220,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         activePanel = activePanel,
                         filterActive = uiState.filter.isActive,
                         gpsActive = uiState.gpsAssistedEnabled,
-                        onMenu = { activePanel = if (activePanel == OverlayPanel.MENU) OverlayPanel.NONE else OverlayPanel.MENU },
+                        onMenu = { activePanel = if (activePanel == OverlayPanel.SETTINGS) OverlayPanel.NONE else OverlayPanel.SETTINGS },
                         onStats = { activePanel = OverlayPanel.STATS },
                         onFilter = { activePanel = if (activePanel == OverlayPanel.FILTER) OverlayPanel.NONE else OverlayPanel.FILTER },
                         showGps = activePanel == OverlayPanel.NONE,
@@ -253,16 +252,6 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                 )
 
                 when (activePanel) {
-                    OverlayPanel.MENU -> MainMenu(
-                        onSettings = { activePanel = OverlayPanel.SETTINGS },
-                        onClose = { activePanel = OverlayPanel.NONE },
-                        modifier = Modifier
-                            .align(Alignment.TopStart)
-                            .statusBarsPadding()
-                            .padding(start = 16.dp, top = 72.dp, end = 16.dp)
-                            .zIndex(19f)
-                    )
-
                     OverlayPanel.SEARCH -> SearchPanel(
                         query = uiState.searchQuery,
                         results = uiState.searchResults,
@@ -293,10 +282,10 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     )
 
                     OverlayPanel.SETTINGS -> SettingsView(
-                        onClose = { activePanel = OverlayPanel.MENU },
+                        onClose = { activePanel = OverlayPanel.NONE },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.3.4.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.5.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -325,7 +314,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                     OverlayPanel.STATS -> StatsView(
                         globalStats = uiState.globalStats,
                         arrondissementStats = uiState.arrondissementStats,
-                        onClose = { activePanel = OverlayPanel.MENU },
+                        onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.Center)
                             .zIndex(19f)
@@ -337,7 +326,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         proposals = uiState.b2ReviewProposals,
                         diagnostics = uiState.b2ProposalDiagnostics,
                         highlightedProposalCount = uiState.b2ProposedSegmentIds.size,
+                        mapHighlightsEnabled = uiState.b2MapHighlightsEnabled,
                         onBackendUrlChange = viewModel::setBackendBaseUrl,
+                        onImportStrava = viewModel::importB2StravaActivities,
                         onTestBackend = viewModel::testB2Backend,
                         onRefreshStatus = viewModel::refreshB2Status,
                         onTriggerSync = viewModel::triggerB2StravaSync,
@@ -349,7 +340,9 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onDismissProposal = viewModel::dismissB2Proposal,
                         onValidateAll = viewModel::validateAllLoadedB2Proposals,
                         onDismissAll = viewModel::dismissAllLoadedB2Proposals,
-                        onClose = { activePanel = OverlayPanel.MENU },
+                        onMapHighlightsChange = viewModel::setB2MapHighlightsEnabled,
+                        onResetProcessedActivities = viewModel::resetB2ProcessedActivities,
+                        onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.Center)
                             .zIndex(19f)
@@ -719,7 +712,7 @@ private fun MapTopControls(
         ) {
             MapControlButton(
                 kind = MapControlKind.MENU,
-                active = activePanel == OverlayPanel.MENU,
+                active = activePanel == OverlayPanel.SETTINGS,
                 onClick = onMenu
             )
             MapControlButton(
@@ -1225,7 +1218,9 @@ private fun B2ReviewView(
     proposals: List<B2Proposal>,
     diagnostics: B2ProposalDiagnostics,
     highlightedProposalCount: Int,
+    mapHighlightsEnabled: Boolean,
     onBackendUrlChange: (String) -> Unit,
+    onImportStrava: () -> Unit,
     onTestBackend: () -> Unit,
     onRefreshStatus: () -> Unit,
     onTriggerSync: () -> Unit,
@@ -1237,6 +1232,8 @@ private fun B2ReviewView(
     onDismissProposal: (Int) -> Unit,
     onValidateAll: () -> Unit,
     onDismissAll: () -> Unit,
+    onMapHighlightsChange: (Boolean) -> Unit,
+    onResetProcessedActivities: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1244,6 +1241,8 @@ private fun B2ReviewView(
     var pendingValidation by remember { mutableStateOf<B2Proposal?>(null) }
     var showValidateAllConfirmation by remember { mutableStateOf(false) }
     var showDismissAllConfirmation by remember { mutableStateOf(false) }
+    var showResetProcessingConfirmation by remember { mutableStateOf(false) }
+    var showAdvancedActions by remember { mutableStateOf(false) }
     val proposedCount = proposals.count { it.status == "proposed" }
     Surface(
         modifier = modifier.fillMaxSize(),
@@ -1291,24 +1290,39 @@ private fun B2ReviewView(
                     modifier = Modifier.padding(14.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    Text("Actions backend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = onTriggerSync, enabled = !b2State.loading) {
-                            Text("Synchroniser Strava")
-                        }
-                        OutlinedButton(onClick = onGenerateProposals, enabled = !b2State.loading) {
-                            Text("Generer")
-                        }
+                    Text("Import Strava", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Button(onClick = onImportStrava, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                        Text("Importer mes activites Strava")
                     }
-                    OutlinedButton(
-                        onClick = onLoadMoreActivities,
+                    if (b2State.loading || b2State.stageLabel != null) {
+                        LinearProgressIndicator(
+                            progress = { b2State.stageProgress ?: 0f },
+                            modifier = Modifier.fillMaxWidth().height(6.dp),
+                            color = Color(0xFF0D8B70),
+                            trackColor = Color(0xFFD9E3EA)
+                        )
+                        Text(
+                            b2State.stageLabel ?: "Operation en cours...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Color(0xFF52606D)
+                        )
+                    }
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        enabled = !b2State.loading
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Charger plus d'activites")
-                    }
-                    Button(onClick = onLoadProposals, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
-                        Text("Charger les propositions")
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Afficher les segments proposes sur la carte", style = MaterialTheme.typography.bodyMedium)
+                            if (diagnostics.reviewableProposals > 300 && !mapHighlightsEnabled) {
+                                Text(
+                                    "Trop de segments proposes pour un affichage fluide. L'affichage carte a ete desactive.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Color(0xFFB15C00)
+                                )
+                            }
+                        }
+                        Switch(checked = mapHighlightsEnabled, onCheckedChange = onMapHighlightsChange)
                     }
                     OutlinedButton(
                         onClick = onLoadMoreProposals,
@@ -1316,6 +1330,28 @@ private fun B2ReviewView(
                         enabled = !b2State.loading && diagnostics.reachedEnd.not()
                     ) {
                         Text("Charger plus de propositions")
+                    }
+                    TextButton(onClick = { showAdvancedActions = !showAdvancedActions }) {
+                        Text(if (showAdvancedActions) "Masquer les options avancees" else "Options avancees")
+                    }
+                    if (showAdvancedActions) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = onTriggerSync, enabled = !b2State.loading) {
+                                Text("Synchroniser")
+                            }
+                            OutlinedButton(onClick = onGenerateProposals, enabled = !b2State.loading) {
+                                Text("Generer")
+                            }
+                        }
+                        OutlinedButton(onClick = onLoadMoreActivities, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                            Text("Charger plus d'activites")
+                        }
+                        OutlinedButton(onClick = onLoadProposals, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                            Text("Recharger les propositions")
+                        }
+                        OutlinedButton(onClick = { showResetProcessingConfirmation = true }, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                            Text("Reinitialiser les activites traitees")
+                        }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
@@ -1448,6 +1484,31 @@ private fun B2ReviewView(
             },
             dismissButton = {
                 TextButton(onClick = { showDismissAllConfirmation = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    if (showResetProcessingConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showResetProcessingConfirmation = false },
+            title = { Text("Reinitialiser les activites Strava traitees ?") },
+            text = {
+                Text("Les activites deja analysees pourront etre reexaminees. Les segments deja valides dans votre progression locale ne seront pas supprimes.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetProcessingConfirmation = false
+                        onResetProcessedActivities()
+                    }
+                ) {
+                    Text("Reinitialiser")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetProcessingConfirmation = false }) {
                     Text("Annuler")
                 }
             }

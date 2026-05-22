@@ -12,11 +12,13 @@ from app.db.models import (
     SegmentDatasetVersion,
     SegmentMatchProposal,
     StravaActivity,
+    StravaActivityProposalProcessing,
     StravaStream,
     utc_now,
 )
 from app.schemas.proposals import (
     ProposalGenerationSummary,
+    ProposalProcessingResetResponse,
     ProposalResponse,
     ProposalStatusResponse,
 )
@@ -63,23 +65,27 @@ class ProposalService:
             raise ProposalGenerationError("No active segment dataset is loaded")
 
         activity_ids_with_proposals = self._activity_ids_with_proposals(active_dataset.id)
+        processed_activity_ids = self._processed_activity_ids(active_dataset.id)
         streams_total = self._eligible_stream_count()
         effective_limit = self._effective_activity_limit(max_activities)
         streams = self._streams_for_generation(
-            activity_ids_with_proposals,
+            processed_activity_ids,
             only_unprocessed=only_unprocessed,
             limit=effective_limit,
         )
         skipped_already_processed = 0
         if only_unprocessed:
-            skipped_already_processed = min(streams_total, len(activity_ids_with_proposals))
+            skipped_already_processed = min(streams_total, len(processed_activity_ids))
         elif len(streams) < effective_limit:
             skipped_already_processed = 0
+        pending_processing = max(0, streams_total - len(processed_activity_ids))
         if not streams:
             return ProposalGenerationSummary(
                 activities_with_streams_total=streams_total,
                 activities_already_had_proposals=len(activity_ids_with_proposals),
                 activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
+                activities_already_processed=len(processed_activity_ids),
+                activities_pending_processing=pending_processing,
                 activities_processed=0,
                 streams_processed=0,
                 activities_skipped_already_processed=skipped_already_processed,
@@ -100,6 +106,10 @@ class ProposalService:
 
         for stream in streams:
             activities_processed.add(stream.strava_activity_id)
+            before_created = proposals_created
+            before_updated = proposals_updated
+            before_skipped = proposals_skipped
+            processing_error: str | None = None
             try:
                 stream_points = json.loads(stream.latlng_json)
                 candidates = self._candidate_segments(active_dataset.id, stream_points)
@@ -124,6 +134,16 @@ class ProposalService:
                         best_candidates[key] = candidate
             except Exception:
                 errors_count += 1
+                processing_error = "Activity stream could not be matched"
+            finally:
+                self._mark_activity_processed(
+                    dataset_version_id=active_dataset.id,
+                    activity_id=stream.strava_activity_id,
+                    proposals_created=proposals_created - before_created,
+                    proposals_updated=proposals_updated - before_updated,
+                    proposals_skipped=proposals_skipped - before_skipped,
+                    error_message=processing_error,
+                )
 
         for candidate in best_candidates.values():
             result = self._upsert_proposal(
@@ -149,6 +169,8 @@ class ProposalService:
             activities_with_streams_total=streams_total,
             activities_already_had_proposals=len(activity_ids_with_proposals),
             activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
+            activities_already_processed=len(processed_activity_ids),
+            activities_pending_processing=pending_processing,
             activities_processed=len(activities_processed),
             streams_processed=len(streams),
             activities_skipped_already_processed=skipped_already_processed,
@@ -178,6 +200,15 @@ class ProposalService:
         )
         return {str(row[0]) for row in rows}
 
+    def _processed_activity_ids(self, dataset_version_id: int) -> set[str]:
+        rows = (
+            self._db.query(StravaActivityProposalProcessing.strava_activity_id)
+            .filter(StravaActivityProposalProcessing.dataset_version_id == dataset_version_id)
+            .filter(StravaActivityProposalProcessing.status == "processed")
+            .all()
+        )
+        return {str(row[0]) for row in rows}
+
     def _effective_activity_limit(self, requested_max_activities: int | None) -> int:
         configured = max(1, self._settings.match_max_activities_per_run)
         requested = requested_max_activities if requested_max_activities is not None else configured
@@ -185,13 +216,13 @@ class ProposalService:
 
     def _streams_for_generation(
         self,
-        activity_ids_with_proposals: set[str],
+        processed_activity_ids: set[str],
         only_unprocessed: bool,
         limit: int,
     ) -> list[StravaStream]:
         unprocessed = (
             self._eligible_stream_query()
-            .filter(~StravaStream.strava_activity_id.in_(activity_ids_with_proposals))
+            .filter(~StravaStream.strava_activity_id.in_(processed_activity_ids))
             .order_by(StravaStream.created_at.asc(), StravaStream.id.asc())
             .limit(limit)
             .all()
@@ -200,12 +231,40 @@ class ProposalService:
             return unprocessed
         existing = (
             self._eligible_stream_query()
-            .filter(StravaStream.strava_activity_id.in_(activity_ids_with_proposals))
+            .filter(StravaStream.strava_activity_id.in_(processed_activity_ids))
             .order_by(StravaStream.created_at.asc(), StravaStream.id.asc())
             .limit(limit - len(unprocessed))
             .all()
         )
         return unprocessed + existing
+
+    def _mark_activity_processed(
+        self,
+        dataset_version_id: int,
+        activity_id: str,
+        proposals_created: int,
+        proposals_updated: int,
+        proposals_skipped: int,
+        error_message: str | None,
+    ) -> None:
+        processing = (
+            self._db.query(StravaActivityProposalProcessing)
+            .filter(StravaActivityProposalProcessing.dataset_version_id == dataset_version_id)
+            .filter(StravaActivityProposalProcessing.strava_activity_id == activity_id)
+            .one_or_none()
+        )
+        if processing is None:
+            processing = StravaActivityProposalProcessing(
+                dataset_version_id=dataset_version_id,
+                strava_activity_id=activity_id,
+            )
+        processing.status = "failed" if error_message else "processed"
+        processing.processed_at = utc_now()
+        processing.proposals_created = proposals_created
+        processing.proposals_updated = proposals_updated
+        processing.proposals_skipped = proposals_skipped
+        processing.error_message = error_message
+        self._db.add(processing)
 
     def list_proposals(
         self,
@@ -282,6 +341,29 @@ class ProposalService:
         self._db.commit()
         self._db.refresh(proposal)
         return proposal
+
+    def reset_processing(self, include_proposals: bool = False) -> ProposalProcessingResetResponse:
+        active_dataset = self._active_dataset()
+        if active_dataset is None:
+            raise ProposalGenerationError("No active segment dataset is loaded")
+        query = self._db.query(StravaActivityProposalProcessing).filter(
+            StravaActivityProposalProcessing.dataset_version_id == active_dataset.id
+        )
+        reset_count = query.count()
+        query.delete(synchronize_session=False)
+        proposals_deleted = 0
+        if include_proposals:
+            proposal_query = self._db.query(SegmentMatchProposal).filter(
+                SegmentMatchProposal.dataset_version_id == active_dataset.id
+            )
+            proposals_deleted = proposal_query.count()
+            proposal_query.delete(synchronize_session=False)
+        self._db.commit()
+        return ProposalProcessingResetResponse(
+            dataset_version_id=active_dataset.id,
+            processing_records_reset=reset_count,
+            proposals_deleted=proposals_deleted,
+        )
 
     def _active_dataset(self) -> SegmentDatasetVersion | None:
         return (

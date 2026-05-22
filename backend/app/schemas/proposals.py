@@ -5,7 +5,7 @@ from pydantic import Field
 
 
 class ProposalGenerationRequest(BaseModel):
-    only_unprocessed: bool = False
+    only_unprocessed: bool = True
     max_activities: int | None = Field(default=None, ge=1)
 
 
@@ -13,6 +13,8 @@ class ProposalGenerationSummary(BaseModel):
     activities_with_streams_total: int = 0
     activities_already_had_proposals: int = 0
     activities_without_existing_proposals: int = 0
+    activities_already_processed: int = 0
+    activities_pending_processing: int = 0
     activities_processed: int
     streams_processed: int
     activities_skipped_already_processed: int = 0
@@ -64,3 +66,13 @@ class ProposalStatusResponse(BaseModel):
 class ProposalMutationResponse(BaseModel):
     id: int
     status: str
+
+
+class ProposalProcessingResetRequest(BaseModel):
+    include_proposals: bool = False
+
+
+class ProposalProcessingResetResponse(BaseModel):
+    dataset_version_id: int | None
+    processing_records_reset: int
+    proposals_deleted: int = 0

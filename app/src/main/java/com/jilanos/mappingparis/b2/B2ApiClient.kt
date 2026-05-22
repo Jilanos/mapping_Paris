@@ -60,6 +60,11 @@ class B2ApiClient(private val baseUrl: String) {
         return B2JsonParser.proposalStatus(json)
     }
 
+    suspend fun resetProposalProcessing(): B2ProcessingResetSummary {
+        val json = requestJson(path = "/proposals/processing/reset", method = "POST")
+        return B2JsonParser.processingResetSummary(json)
+    }
+
     suspend fun getProposals(status: String = "proposed"): List<B2Proposal> {
         return getProposalsPage(status = status).proposals
     }
@@ -197,6 +202,14 @@ object B2JsonParser {
             activeDatasetVersionId = json.optNullableInt("active_dataset_version_id"),
             activitiesWithStreamsCount = json.optInt("activities_with_streams_count"),
             latestProposalCreatedAt = json.optNullableString("latest_proposal_created_at")
+        )
+    }
+
+    fun processingResetSummary(json: JSONObject): B2ProcessingResetSummary {
+        return B2ProcessingResetSummary(
+            datasetVersionId = json.optNullableInt("dataset_version_id"),
+            processingRecordsReset = json.optInt("processing_records_reset"),
+            proposalsDeleted = json.optInt("proposals_deleted")
         )
     }
 

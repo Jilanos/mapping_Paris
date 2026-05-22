@@ -254,3 +254,46 @@ class SegmentMatchProposal(Base):
     dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_match_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class StravaActivityProposalProcessing(Base):
+    __tablename__ = "strava_activity_proposal_processing"
+    __table_args__ = (
+        UniqueConstraint(
+            "dataset_version_id",
+            "strava_activity_id",
+            name="uq_processing_dataset_activity",
+        ),
+        Index("ix_processing_status", "status"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    strava_activity_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("strava_activities.strava_activity_id"),
+        nullable=False,
+        index=True,
+    )
+    dataset_version_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("segment_dataset_versions.id"),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    processed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    proposals_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposals_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposals_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )

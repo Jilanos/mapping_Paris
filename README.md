@@ -98,10 +98,9 @@ must also be allowed through the local firewall if Windows blocks the port.
 Current B2 Android scope:
 
 - health/status checks;
-- manual Strava sync trigger;
-- loading additional older Strava activities when the current review list is
-  empty;
-- manual proposal generation trigger;
+- guided Strava import through `Importer mes activites Strava`;
+- stage-based progress while the backend syncs activities, generates
+  proposals, and Android filters reviewable segments;
 - loading and highlighting proposed segments;
 - validating a proposal with confirmation, which accepts it on the backend and
   marks the matching local logical segment as completed;
@@ -144,6 +143,10 @@ scanning later backend pages until it finds reviewable local segments, reaches
 the end, or reaches the safe per-action scan limit. `Charger plus de
 propositions` continues scanning existing backend proposals without importing
 more Strava activities.
+
+To keep the map responsive, Android can disable orange Strava proposal
+highlights when the reviewable proposal count is high. The proposal list and
+validation flow remain usable when map highlights are off.
 
 Local E2E checks:
 

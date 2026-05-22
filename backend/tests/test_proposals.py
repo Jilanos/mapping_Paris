@@ -217,8 +217,9 @@ def test_duplicate_generation_does_not_duplicate_proposals(proposal_client) -> N
 
     assert second.status_code == 200
     assert second.json()["activities_already_had_proposals"] == 1
+    assert second.json()["activities_already_processed"] == 1
     assert second.json()["proposals_updated"] == 0
-    assert second.json()["proposals_skipped"] == 1
+    assert second.json()["proposals_skipped"] == 0
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).count() == 1
 
@@ -267,6 +268,44 @@ def test_generation_only_unprocessed_does_not_reprocess_existing_batch(proposal_
     assert payload["proposals_created"] == 0
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).count() == 3
+
+
+def test_reset_processing_allows_reprocessing_without_deleting_proposals(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_stream(session_factory)
+    client.post("/proposals/generate")
+
+    reset = client.post("/proposals/processing/reset")
+    second = client.post("/proposals/generate")
+
+    assert reset.status_code == 200
+    assert reset.json()["processing_records_reset"] == 1
+    assert reset.json()["proposals_deleted"] == 0
+    assert second.status_code == 200
+    assert second.json()["activities_processed"] == 1
+    assert second.json()["proposals_created"] == 0
+    with session_factory() as db:
+        assert db.query(StravaActivity).count() == 1
+        assert db.query(StravaStream).count() == 1
+        assert db.query(SegmentMatchProposal).count() == 1
+
+
+def test_reset_processing_keeps_accepted_proposals_protected(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_stream(session_factory)
+    client.post("/proposals/generate")
+    proposal_id = client.get("/proposals").json()["proposals"][0]["id"]
+    client.post(f"/proposals/{proposal_id}/accept")
+
+    reset = client.post("/proposals/processing/reset")
+    second = client.post("/proposals/generate")
+
+    assert reset.status_code == 200
+    assert second.json()["proposals_skipped"] == 1
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).one().status == "accepted"
 
 
 def test_duplicate_logical_segments_keep_best_candidate(proposal_client) -> None:
@@ -332,7 +371,7 @@ def test_existing_proposed_proposal_updates_only_when_candidate_is_better(propos
 
     assert second.status_code == 200
     assert second.json()["proposals_updated"] == 0
-    assert second.json()["proposals_skipped"] == 1
+    assert second.json()["proposals_skipped"] == 0
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).count() == 1
 
@@ -347,7 +386,8 @@ def test_accepted_proposal_is_not_overwritten(proposal_client) -> None:
 
     response = client.post("/proposals/generate")
 
-    assert response.json()["proposals_skipped"] == 1
+    assert response.json()["activities_already_processed"] == 1
+    assert response.json()["proposals_skipped"] == 0
     assert client.get("/proposals?status=accepted").json()["proposals"][0]["status"] == "accepted"
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).one().status == "accepted"
@@ -363,7 +403,8 @@ def test_dismissed_proposal_is_not_overwritten(proposal_client) -> None:
 
     response = client.post("/proposals/generate")
 
-    assert response.json()["proposals_skipped"] == 1
+    assert response.json()["activities_already_processed"] == 1
+    assert response.json()["proposals_skipped"] == 0
     assert client.get("/proposals?status=dismissed").json()["proposals"][0]["status"] == "dismissed"
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).one().status == "dismissed"
