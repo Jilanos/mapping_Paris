@@ -43,7 +43,7 @@ class StravaSyncService:
         self._settings = settings
         self._strava_client = strava_client
 
-    def run_sync(self) -> SyncRunSummary:
+    def run_sync(self, max_pages: int | None = None, per_page: int | None = None) -> SyncRunSummary:
         sync_run = SyncRun(status="running")
         self._db.add(sync_run)
         self._db.commit()
@@ -55,10 +55,21 @@ class StravaSyncService:
             if access_token is None:
                 raise SyncNotConnectedError("No Strava token is stored")
 
-            activities = self._fetch_activities(access_token)
+            effective_max_pages = self._effective_max_pages(max_pages)
+            effective_per_page = self._effective_per_page(per_page)
+            activities, pages_requested = self._fetch_activities(
+                access_token,
+                max_pages=effective_max_pages,
+                per_page=effective_per_page,
+            )
             sync_run.activities_fetched = len(activities)
+            skipped_existing_activities = 0
             for activity in activities:
                 if not self._is_supported_activity(activity):
+                    continue
+                existing_activity = self._find_activity(str(activity["id"]))
+                if existing_activity is not None and existing_activity.streams_downloaded:
+                    skipped_existing_activities += 1
                     continue
                 db_activity, created = self._upsert_activity(activity, token.athlete_id)
                 if created:
@@ -74,7 +85,11 @@ class StravaSyncService:
             self._db.add(sync_run)
             self._db.commit()
             self._db.refresh(sync_run)
-            return self._summary(sync_run)
+            return self._summary(
+                sync_run,
+                pages_requested=pages_requested,
+                skipped_existing_activities=skipped_existing_activities,
+            )
         except (EncryptionConfigError, SyncConfigError, SyncNotConnectedError):
             sync_run.finished_at = datetime.now(UTC)
             sync_run.status = "failed"
@@ -127,30 +142,49 @@ class StravaSyncService:
             token = token_store.save(refreshed)
         return token
 
-    def _fetch_activities(self, access_token: str) -> list[dict]:
+    def _effective_max_pages(self, requested_max_pages: int | None) -> int:
+        configured_default = max(1, self._settings.strava_sync_max_pages)
+        absolute_max = max(1, self._settings.strava_sync_absolute_max_pages)
+        return min(max(1, requested_max_pages or configured_default), absolute_max)
+
+    def _effective_per_page(self, requested_per_page: int | None) -> int:
+        configured_default = max(1, self._settings.strava_sync_per_page)
+        return min(max(1, requested_per_page or configured_default), 100)
+
+    def _fetch_activities(
+        self,
+        access_token: str,
+        max_pages: int,
+        per_page: int,
+    ) -> tuple[list[dict], int]:
         activities: list[dict] = []
-        for page in range(1, self._settings.strava_sync_max_pages + 1):
+        pages_requested = 0
+        for page in range(1, max_pages + 1):
+            pages_requested += 1
             page_activities = self._strava_client.list_activities(
                 access_token,
                 page=page,
-                per_page=self._settings.strava_sync_per_page,
+                per_page=per_page,
             )
             activities.extend(page_activities)
-            if len(page_activities) < self._settings.strava_sync_per_page:
+            if len(page_activities) < per_page:
                 break
-        return activities
+        return activities, pages_requested
 
     def _is_supported_activity(self, activity: dict) -> bool:
         sport_type = activity.get("sport_type") or activity.get("type") or ""
         return sport_type in self._settings.sync_sport_types
 
-    def _upsert_activity(self, activity: dict, athlete_id: str | None) -> tuple[StravaActivity, bool]:
-        activity_id = str(activity["id"])
-        db_activity = (
+    def _find_activity(self, activity_id: str) -> StravaActivity | None:
+        return (
             self._db.query(StravaActivity)
             .filter(StravaActivity.strava_activity_id == activity_id)
             .one_or_none()
         )
+
+    def _upsert_activity(self, activity: dict, athlete_id: str | None) -> tuple[StravaActivity, bool]:
+        activity_id = str(activity["id"])
+        db_activity = self._find_activity(activity_id)
         created = db_activity is None
         if db_activity is None:
             db_activity = StravaActivity(strava_activity_id=activity_id)
@@ -240,7 +274,12 @@ class StravaSyncService:
     def _latest_run(self) -> SyncRun | None:
         return self._db.query(SyncRun).order_by(SyncRun.started_at.desc(), SyncRun.id.desc()).first()
 
-    def _summary(self, run: SyncRun) -> SyncRunSummary:
+    def _summary(
+        self,
+        run: SyncRun,
+        pages_requested: int = 0,
+        skipped_existing_activities: int = 0,
+    ) -> SyncRunSummary:
         return SyncRunSummary(
             id=run.id,
             status=run.status,
@@ -250,6 +289,8 @@ class StravaSyncService:
             activities_created=run.activities_created,
             activities_updated=run.activities_updated,
             streams_downloaded=run.streams_downloaded,
+            pages_requested=pages_requested,
+            skipped_existing_activities=skipped_existing_activities,
             errors_count=run.errors_count,
             message=run.message,
         )

@@ -11,8 +11,8 @@ The project deliberately keeps three things separate:
 
 The Android app remains local-first: there is no account system, no cloud sync,
 and no automatic segment validation. A local Strava B2 backend prototype now
-exists for manual proposal review, but accepted backend proposals do not update
-local completion state yet.
+exists for manual proposal review. Accepted backend proposals update local
+completion only when the Android user explicitly validates them.
 
 ## Current State
 
@@ -99,6 +99,8 @@ Current B2 Android scope:
 
 - health/status checks;
 - manual Strava sync trigger;
+- loading additional older Strava activities when the current review list is
+  empty;
 - manual proposal generation trigger;
 - loading and highlighting proposed segments;
 - validating a proposal with confirmation, which accepts it on the backend and
@@ -111,6 +113,11 @@ Important: Strava B2 still does not automatically complete streets. Local
 progress is changed only after an explicit Android user action. `Tout valider`
 applies only to currently loaded proposed proposals, not every proposal that may
 exist on the backend.
+
+Use `Charger plus d'activites` when the current review list is empty because
+the most recent Strava Run/Ride activities have already been accepted or
+ignored. Android progressively asks the backend to scan a wider Strava page
+window, generate proposals again, then refresh the filtered review list.
 
 The Android review list is filtered before display. It only shows new segments
 that can actually be validated locally:

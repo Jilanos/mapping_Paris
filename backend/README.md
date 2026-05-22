@@ -50,6 +50,8 @@ Available variables:
 - `DATABASE_URL`, default `sqlite:///./mapping_paris_strava_b2.db`
 - `STRAVA_SYNC_PER_PAGE`, default `30`
 - `STRAVA_SYNC_MAX_PAGES`, default `1`
+- `STRAVA_SYNC_LOAD_MORE_MAX_PAGES`, default `5`
+- `STRAVA_SYNC_ABSOLUTE_MAX_PAGES`, default `10`
 - `STRAVA_SYNC_DOWNLOAD_STREAMS`, default `true`
 - `STRAVA_SYNC_SPORT_TYPES`, default `Run,Ride`
 - `STRAVA_TOKEN_REFRESH_MARGIN_SECONDS`, default `300`
@@ -129,6 +131,22 @@ Implemented routes:
 
 `POST /sync/strava` runs one synchronous sync pass. There is no background
 worker, scheduler, Celery, Redis, or cron in this milestone.
+
+The default request body is empty and keeps the normal refresh behavior. For a
+larger page scan, the route also accepts optional JSON:
+
+```json
+{
+  "max_pages": 5,
+  "per_page": 30
+}
+```
+
+`max_pages` is clamped by `STRAVA_SYNC_ABSOLUTE_MAX_PAGES` and `per_page` is
+clamped to `100`. The sync pass scans Strava pages from `1` to the requested
+depth, skips eligible activities already stored with streams, downloads streams
+for new eligible `Run`/`Ride` activities, and reports
+`skipped_existing_activities` plus `pages_requested` in the response.
 
 Current sync behavior:
 

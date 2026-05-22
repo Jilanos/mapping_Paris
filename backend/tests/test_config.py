@@ -54,6 +54,8 @@ def test_default_settings_load_without_real_secrets(monkeypatch) -> None:
     assert settings.token_encryption_key == ""
     assert settings.strava_sync_per_page == 30
     assert settings.strava_sync_max_pages == 1
+    assert settings.strava_sync_load_more_max_pages == 5
+    assert settings.strava_sync_absolute_max_pages == 10
     assert settings.strava_sync_download_streams is True
     assert settings.sync_sport_types == {"Run", "Ride"}
     assert settings.strava_token_refresh_margin_seconds == 300

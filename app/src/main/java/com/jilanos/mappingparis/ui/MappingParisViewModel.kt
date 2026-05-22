@@ -303,6 +303,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private val segments = MutableStateFlow(repository.loadSegments())
     private val gpsPath = mutableListOf<LatLon>()
     private val dismissedGpsProposalIds = mutableSetOf<String>()
+    private var b2LoadMoreMaxPages = DEFAULT_B2_SYNC_MAX_PAGES
     private var focusCounter = 0
 
     val uiState: StateFlow<MappingParisUiState> =
@@ -504,7 +505,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.3.3")
+            .put("appVersion", "0.3.4")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
@@ -581,6 +582,54 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 val syncRun = client.triggerStravaSync()
                 val syncStatus = client.getSyncStatus()
                 b2State.update { it.copy(lastSyncRun = syncRun, syncStatus = syncStatus) }
+            }
+        }
+    }
+
+    fun loadMoreB2Activities() {
+        viewModelScope.launch {
+            val client = b2ClientOrNull()
+            if (client == null) {
+                b2State.update { it.copy(loading = false, error = "Configure d'abord l'URL backend B2", message = null) }
+                return@launch
+            }
+            if (b2State.value.loading) return@launch
+            b2State.update { it.copy(loading = true, error = null, message = null) }
+            val targetMaxPages = nextB2LoadMoreMaxPages()
+            try {
+                val syncRun = client.triggerStravaSync(maxPages = targetMaxPages)
+                val proposalGeneration = client.triggerProposalGeneration()
+                val proposals = client.getProposals(status = "proposed")
+                b2Proposals.value = proposals
+                val reviewableCount = filterReviewableB2Proposals(
+                    proposals = proposals,
+                    segments = segments.value,
+                    completionStates = completionStatesSnapshot()
+                ).size
+                b2LoadMoreMaxPages = targetMaxPages
+                val syncStatus = client.getSyncStatus()
+                val proposalStatus = client.getProposalStatus()
+                val generatedCount = proposalGeneration.proposalsCreated + proposalGeneration.proposalsUpdated
+                val message = if (reviewableCount == 0) {
+                    "Aucun nouveau segment trouve. Essayez de charger plus d'activites ou verifiez que vos activites Strava passent dans Paris."
+                } else {
+                    "Activites supplementaires: ${syncRun.activitiesCreated} importees, ${syncRun.streamsDownloaded} traces, $generatedCount propositions, $reviewableCount nouveaux segments a examiner"
+                }
+                b2State.update {
+                    it.copy(
+                        loading = false,
+                        error = null,
+                        message = message,
+                        lastSyncRun = syncRun,
+                        syncStatus = syncStatus,
+                        lastProposalGeneration = proposalGeneration,
+                        proposalStatus = proposalStatus
+                    )
+                }
+            } catch (exception: B2ApiException) {
+                b2State.update { it.copy(loading = false, error = exception.message ?: "Erreur backend B2", message = null) }
+            } catch (exception: Exception) {
+                b2State.update { it.copy(loading = false, error = exception.message ?: "Erreur inattendue B2", message = null) }
             }
         }
     }
@@ -752,6 +801,14 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         return normalized.takeIf { it.isNotBlank() }?.let(::B2ApiClient)
     }
 
+    private fun nextB2LoadMoreMaxPages(): Int {
+        return when {
+            b2LoadMoreMaxPages < B2_LOAD_MORE_FIRST_MAX_PAGES -> B2_LOAD_MORE_FIRST_MAX_PAGES
+            b2LoadMoreMaxPages < B2_LOAD_MORE_SECOND_MAX_PAGES -> B2_LOAD_MORE_SECOND_MAX_PAGES
+            else -> B2_LOAD_MORE_ABSOLUTE_MAX_PAGES
+        }
+    }
+
     private fun reviewableB2ProposalsSnapshot(): List<B2Proposal> {
         return filterReviewableB2Proposals(
             proposals = b2Proposals.value,
@@ -822,6 +879,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val KEY_GPS_COVERAGE_THRESHOLD_PERCENT = "gps_coverage_threshold_percent"
         const val KEY_BACKEND_BASE_URL = "b2_backend_base_url"
         const val GPS_PATH_MIN_STEP_METERS = 12.0
+        const val DEFAULT_B2_SYNC_MAX_PAGES = 1
+        const val B2_LOAD_MORE_FIRST_MAX_PAGES = 3
+        const val B2_LOAD_MORE_SECOND_MAX_PAGES = 5
+        const val B2_LOAD_MORE_ABSOLUTE_MAX_PAGES = 10
         const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
         const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30
         const val MAX_GPS_COVERAGE_THRESHOLD_PERCENT = 95

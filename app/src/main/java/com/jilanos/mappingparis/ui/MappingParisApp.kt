@@ -296,7 +296,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.MENU },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.3.3.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.4.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -341,6 +341,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onTestBackend = viewModel::testB2Backend,
                         onRefreshStatus = viewModel::refreshB2Status,
                         onTriggerSync = viewModel::triggerB2StravaSync,
+                        onLoadMoreActivities = viewModel::loadMoreB2Activities,
                         onGenerateProposals = viewModel::triggerB2ProposalGeneration,
                         onLoadProposals = viewModel::loadB2Proposals,
                         onValidateProposal = viewModel::validateB2Proposal,
@@ -1227,6 +1228,7 @@ private fun B2ReviewView(
     onTestBackend: () -> Unit,
     onRefreshStatus: () -> Unit,
     onTriggerSync: () -> Unit,
+    onLoadMoreActivities: () -> Unit,
     onGenerateProposals: () -> Unit,
     onLoadProposals: () -> Unit,
     onValidateProposal: (Int) -> Unit,
@@ -1290,11 +1292,18 @@ private fun B2ReviewView(
                     Text("Actions backend", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedButton(onClick = onTriggerSync, enabled = !b2State.loading) {
-                            Text("Synchroniser")
+                            Text("Synchroniser Strava")
                         }
                         OutlinedButton(onClick = onGenerateProposals, enabled = !b2State.loading) {
                             Text("Generer")
                         }
+                    }
+                    OutlinedButton(
+                        onClick = onLoadMoreActivities,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !b2State.loading
+                    ) {
+                        Text("Charger plus d'activites")
                     }
                     Button(onClick = onLoadProposals, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
                         Text("Charger les propositions")
@@ -1332,7 +1341,7 @@ private fun B2ReviewView(
                 if (proposals.isEmpty()) {
                     Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Aucun nouveau segment a examiner. Les propositions non reconnues ou deja parcourues ont ete masquees.",
+                            "Aucun nouveau segment trouve. Essayez de charger plus d'activites ou verifiez que vos activites Strava passent dans Paris.",
                             modifier = Modifier.padding(14.dp),
                             style = MaterialTheme.typography.bodyMedium
                         )

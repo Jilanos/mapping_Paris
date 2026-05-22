@@ -21,8 +21,16 @@ class B2ApiClient(private val baseUrl: String) {
         return B2JsonParser.authStatus(json)
     }
 
-    suspend fun triggerStravaSync(): B2SyncRunSummary {
-        val json = requestJson(path = "/sync/strava", method = "POST")
+    suspend fun triggerStravaSync(maxPages: Int? = null, perPage: Int? = null): B2SyncRunSummary {
+        val body = if (maxPages != null || perPage != null) {
+            JSONObject().apply {
+                maxPages?.let { put("max_pages", it) }
+                perPage?.let { put("per_page", it) }
+            }
+        } else {
+            null
+        }
+        val json = requestJson(path = "/sync/strava", method = "POST", body = body)
         return B2JsonParser.syncRunSummary(json)
     }
 
@@ -54,9 +62,14 @@ class B2ApiClient(private val baseUrl: String) {
         requestJson(path = "/proposals/$proposalId/dismiss", method = "POST")
     }
 
-    private suspend fun requestJson(path: String, method: String): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun requestJson(
+        path: String,
+        method: String,
+        body: JSONObject? = null
+    ): JSONObject = withContext(Dispatchers.IO) {
         val normalizedBaseUrl = normalizeBackendUrl(baseUrl)
             ?: throw B2ApiException("URL backend invalide")
+        val requestBody = body?.toString()?.toByteArray(Charsets.UTF_8) ?: ByteArray(0)
         val connection = (URL(normalizedBaseUrl + path).openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 10_000
@@ -65,12 +78,14 @@ class B2ApiClient(private val baseUrl: String) {
             if (method == "POST") {
                 doOutput = true
                 setRequestProperty("Content-Type", "application/json")
-                setRequestProperty("Content-Length", "0")
+                setRequestProperty("Content-Length", requestBody.size.toString())
             }
         }
         try {
             if (method == "POST") {
-                connection.outputStream.use { }
+                connection.outputStream.use { output ->
+                    if (requestBody.isNotEmpty()) output.write(requestBody)
+                }
             }
             val responseCode = connection.responseCode
             val stream = if (responseCode in 200..299) connection.inputStream else connection.errorStream
@@ -130,6 +145,8 @@ object B2JsonParser {
             activitiesCreated = json.optInt("activities_created"),
             activitiesUpdated = json.optInt("activities_updated"),
             streamsDownloaded = json.optInt("streams_downloaded"),
+            pagesRequested = json.optInt("pages_requested"),
+            skippedExistingActivities = json.optInt("skipped_existing_activities"),
             errorsCount = json.optInt("errors_count"),
             message = json.optNullableString("message")
         )

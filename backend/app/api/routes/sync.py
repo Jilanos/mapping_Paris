@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.crypto import EncryptionConfigError
 from app.db.session import get_db
-from app.schemas.sync import SyncRunsResponse, SyncRunSummary, SyncStatusResponse
+from app.schemas.sync import SyncRunsResponse, SyncRunSummary, SyncStatusResponse, SyncStravaRequest
 from app.services.strava_client import StravaClient, StravaClientError, get_strava_client
 from app.services.strava_sync_service import (
     StravaSyncService,
@@ -17,12 +17,16 @@ router = APIRouter(prefix="/sync", tags=["sync"])
 
 @router.post("/strava", response_model=SyncRunSummary)
 def sync_strava(
+    request: SyncStravaRequest | None = None,
     db: Session = Depends(get_db),
     strava_client: StravaClient = Depends(get_strava_client),
 ) -> SyncRunSummary:
     service = StravaSyncService(db, get_settings(), strava_client)
     try:
-        return service.run_sync()
+        return service.run_sync(
+            max_pages=request.max_pages if request else None,
+            per_page=request.per_page if request else None,
+        )
     except SyncNotConnectedError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (SyncConfigError, EncryptionConfigError) as exc:

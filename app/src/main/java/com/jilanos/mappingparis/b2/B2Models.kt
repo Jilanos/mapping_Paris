@@ -22,6 +22,8 @@ data class B2SyncRunSummary(
     val activitiesCreated: Int,
     val activitiesUpdated: Int,
     val streamsDownloaded: Int,
+    val pagesRequested: Int,
+    val skippedExistingActivities: Int,
     val errorsCount: Int,
     val message: String?
 )

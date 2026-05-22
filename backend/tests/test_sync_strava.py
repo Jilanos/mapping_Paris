@@ -23,12 +23,15 @@ from app.services.token_store import TokenStore  # noqa: E402
 class FakeStravaSyncClient:
     def __init__(self) -> None:
         self.activities: list[dict] = []
+        self.activities_by_page: dict[int, list[dict]] = {}
         self.streams: dict[str, dict | Exception] = {}
         self.refresh_calls: list[str] = []
         self.list_calls: list[tuple[str, int, int]] = []
 
     def list_activities(self, access_token: str, page: int, per_page: int, after=None, before=None):
         self.list_calls.append((access_token, page, per_page))
+        if self.activities_by_page:
+            return self.activities_by_page.get(page, [])
         return self.activities
 
     def get_activity_streams(self, access_token: str, activity_id):
@@ -72,6 +75,8 @@ def sync_client(tmp_path, monkeypatch):
     monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode("utf-8"))
     monkeypatch.setenv("STRAVA_SYNC_PER_PAGE", "30")
     monkeypatch.setenv("STRAVA_SYNC_MAX_PAGES", "1")
+    monkeypatch.setenv("STRAVA_SYNC_LOAD_MORE_MAX_PAGES", "5")
+    monkeypatch.setenv("STRAVA_SYNC_ABSOLUTE_MAX_PAGES", "10")
     get_settings.cache_clear()
 
     def override_get_db():
@@ -171,8 +176,10 @@ def test_sync_stores_run_and_ride_activities_and_streams(sync_client) -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["status"] == "success"
+    assert payload["pages_requested"] == 1
     assert payload["activities_fetched"] == 3
     assert payload["activities_created"] == 2
+    assert payload["skipped_existing_activities"] == 0
     assert payload["streams_downloaded"] == 2
     with session_factory() as db:
         activities = db.query(StravaActivity).order_by(StravaActivity.strava_activity_id).all()
@@ -202,6 +209,89 @@ def test_sync_records_partial_failure_when_stream_download_fails(sync_client) ->
     with session_factory() as db:
         assert db.query(SyncError).count() == 1
         assert db.query(SyncRun).one().status == "partial_failure"
+
+
+def test_sync_with_max_pages_requests_later_pages(sync_client) -> None:
+    client, session_factory, fake_strava = sync_client
+    _store_token(session_factory)
+    fake_strava.activities_by_page = {
+        1: [_activity(1, "Run"), _activity(2, "Ride")],
+        2: [_activity(3, "Run"), _activity(4, "Ride")],
+        3: [_activity(5, "Run")],
+    }
+    fake_strava.streams = {str(activity_id): _stream() for activity_id in range(1, 6)}
+
+    response = client.post("/sync/strava", json={"max_pages": 3, "per_page": 2})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["pages_requested"] == 3
+    assert payload["activities_fetched"] == 5
+    assert payload["activities_created"] == 5
+    assert fake_strava.list_calls == [
+        ("stored-access-token", 1, 2),
+        ("stored-access-token", 2, 2),
+        ("stored-access-token", 3, 2),
+    ]
+
+
+def test_sync_skips_existing_activities_with_streams(sync_client) -> None:
+    client, session_factory, fake_strava = sync_client
+    _store_token(session_factory)
+    fake_strava.activities = [_activity(1, "Run"), _activity(2, "Ride")]
+    fake_strava.streams = {"1": _stream(), "2": _stream()}
+    first = client.post("/sync/strava")
+    assert first.status_code == 200
+
+    second = client.post("/sync/strava")
+
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["activities_created"] == 0
+    assert payload["activities_updated"] == 0
+    assert payload["streams_downloaded"] == 0
+    assert payload["skipped_existing_activities"] == 2
+    with session_factory() as db:
+        assert db.query(StravaActivity).count() == 2
+        assert db.query(StravaStream).count() == 2
+
+
+def test_sync_downloads_missing_stream_for_existing_activity(sync_client) -> None:
+    client, session_factory, fake_strava = sync_client
+    _store_token(session_factory)
+    with session_factory() as db:
+        db.add(StravaActivity(strava_activity_id="1", sport_type="Run", streams_downloaded=False))
+        db.commit()
+    fake_strava.activities = [_activity(1, "Run")]
+    fake_strava.streams = {"1": _stream()}
+
+    response = client.post("/sync/strava")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["activities_created"] == 0
+    assert payload["activities_updated"] == 1
+    assert payload["streams_downloaded"] == 1
+    assert payload["skipped_existing_activities"] == 0
+
+
+def test_sync_clamps_requested_max_pages(sync_client, monkeypatch) -> None:
+    client, session_factory, fake_strava = sync_client
+    _store_token(session_factory)
+    monkeypatch.setenv("STRAVA_SYNC_ABSOLUTE_MAX_PAGES", "3")
+    get_settings.cache_clear()
+    fake_strava.activities_by_page = {
+        1: [_activity(1, "Run")],
+        2: [_activity(2, "Run")],
+        3: [_activity(3, "Run")],
+    }
+    fake_strava.streams = {str(activity_id): _stream() for activity_id in range(1, 4)}
+
+    response = client.post("/sync/strava", json={"max_pages": 99, "per_page": 1})
+
+    assert response.status_code == 200
+    assert response.json()["pages_requested"] == 3
+    assert [call[1] for call in fake_strava.list_calls] == [1, 2, 3]
 
 
 def test_sync_status_returns_counts_and_no_secrets(sync_client) -> None:
