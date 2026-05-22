@@ -43,6 +43,12 @@ class ProposalResponse(BaseModel):
 
 class ProposalsResponse(BaseModel):
     proposals: list[ProposalResponse]
+    total: int = 0
+    limit: int = 100
+    offset: int = 0
+    returned: int = 0
+    has_more: bool = False
+    next_offset: int | None = None
 
 
 class ProposalStatusResponse(BaseModel):

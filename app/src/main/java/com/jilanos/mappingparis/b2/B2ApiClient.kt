@@ -61,8 +61,17 @@ class B2ApiClient(private val baseUrl: String) {
     }
 
     suspend fun getProposals(status: String = "proposed"): List<B2Proposal> {
-        val json = requestJson(path = "/proposals?status=${encodeQueryValue(status)}", method = "GET")
-        return B2JsonParser.proposals(json)
+        return getProposalsPage(status = status).proposals
+    }
+
+    suspend fun getProposalsPage(
+        status: String = "proposed",
+        limit: Int = 100,
+        offset: Int = 0
+    ): B2ProposalsPage {
+        val path = "/proposals?status=${encodeQueryValue(status)}&limit=$limit&offset=$offset"
+        val json = requestJson(path = path, method = "GET")
+        return B2JsonParser.proposalsPage(json, fallbackLimit = limit, fallbackOffset = offset)
     }
 
     suspend fun acceptProposal(proposalId: Int) {
@@ -188,6 +197,19 @@ object B2JsonParser {
             activeDatasetVersionId = json.optNullableInt("active_dataset_version_id"),
             activitiesWithStreamsCount = json.optInt("activities_with_streams_count"),
             latestProposalCreatedAt = json.optNullableString("latest_proposal_created_at")
+        )
+    }
+
+    fun proposalsPage(json: JSONObject, fallbackLimit: Int = 100, fallbackOffset: Int = 0): B2ProposalsPage {
+        val proposals = proposals(json)
+        return B2ProposalsPage(
+            proposals = proposals,
+            total = json.optInt("total", proposals.size),
+            limit = json.optInt("limit", fallbackLimit),
+            offset = json.optInt("offset", fallbackOffset),
+            returned = json.optInt("returned", proposals.size),
+            hasMore = json.optBoolean("has_more", false),
+            nextOffset = json.optNullableInt("next_offset")
         )
     }
 

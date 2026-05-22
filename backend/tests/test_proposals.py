@@ -383,6 +383,54 @@ def test_proposals_list_and_filter_by_arrondissement(proposal_client) -> None:
     assert proposals[0]["street_name"] == "Rue Lepic"
     assert "raw_match" in proposals[0]
     assert proposals[0]["raw_match"] is None
+    assert response.json()["total"] == 1
+    assert response.json()["returned"] == 1
+    assert response.json()["has_more"] is False
+
+
+def test_proposals_pagination_returns_metadata_and_distinct_pages(proposal_client) -> None:
+    client, session_factory = proposal_client
+    dataset_version_id = _seed_dataset(session_factory)
+    with session_factory() as db:
+        for index in range(3):
+            db.add(
+                SegmentMatchProposal(
+                    dataset_version_id=dataset_version_id,
+                    strava_activity_id=f"activity-page-{index}",
+                    segment_id=f"seg-page-{index}",
+                    logical_segment_id=f"logical-page-{index}",
+                    street_name=f"Rue Page {index}",
+                    arrondissement="18",
+                    segment_length_meters=80.0,
+                    covered_length_meters=80.0,
+                    coverage_ratio=1.0,
+                    min_distance_meters=0.0,
+                    avg_distance_meters=float(index),
+                    max_distance_meters=1.0,
+                    matched_points_count=3,
+                    confidence_score=1.0 - (index * 0.01),
+                    status="proposed",
+                )
+            )
+        db.commit()
+
+    first = client.get("/proposals?limit=2&offset=0")
+    second = client.get("/proposals?limit=2&offset=2")
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    first_payload = first.json()
+    second_payload = second.json()
+    assert first_payload["total"] == 3
+    assert first_payload["returned"] == 2
+    assert first_payload["has_more"] is True
+    assert first_payload["next_offset"] == 2
+    assert second_payload["total"] == 3
+    assert second_payload["returned"] == 1
+    assert second_payload["has_more"] is False
+    assert first_payload["proposals"][0]["id"] != second_payload["proposals"][0]["id"]
+    assert "access_token" not in first.text
+    assert "refresh_token" not in first.text
 
 
 def test_proposals_status_returns_counts(proposal_client) -> None:

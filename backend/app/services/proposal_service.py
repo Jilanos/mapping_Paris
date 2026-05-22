@@ -36,6 +36,17 @@ class ProposalCandidate:
     match: SegmentMatch
 
 
+@dataclass(frozen=True)
+class ProposalPage:
+    proposals: list[ProposalResponse]
+    total: int
+    limit: int
+    offset: int
+    returned: int
+    has_more: bool
+    next_offset: int | None
+
+
 class ProposalService:
     def __init__(self, db: Session, settings: Settings) -> None:
         self._db = db
@@ -202,8 +213,9 @@ class ProposalService:
         arrondissement: str | None = None,
         street_name: str | None = None,
         limit: int = 100,
+        offset: int = 0,
         include_raw: bool = False,
-    ) -> list[ProposalResponse]:
+    ) -> ProposalPage:
         query = self._db.query(SegmentMatchProposal)
         if status:
             query = query.filter(SegmentMatchProposal.status == status)
@@ -211,16 +223,29 @@ class ProposalService:
             query = query.filter(SegmentMatchProposal.arrondissement == arrondissement)
         if street_name:
             query = query.filter(SegmentMatchProposal.street_name.ilike(f"%{street_name}%"))
+        total = query.count()
         proposals = (
             query.order_by(
                 SegmentMatchProposal.confidence_score.desc(),
                 SegmentMatchProposal.coverage_ratio.desc(),
                 SegmentMatchProposal.id.asc(),
             )
+            .offset(offset)
             .limit(limit)
             .all()
         )
-        return [self._response(proposal, include_raw=include_raw) for proposal in proposals]
+        returned = len(proposals)
+        next_offset = offset + returned
+        has_more = next_offset < total
+        return ProposalPage(
+            proposals=[self._response(proposal, include_raw=include_raw) for proposal in proposals],
+            total=total,
+            limit=limit,
+            offset=offset,
+            returned=returned,
+            has_more=has_more,
+            next_offset=next_offset if has_more else None,
+        )
 
     def status(self) -> ProposalStatusResponse:
         active_dataset = self._active_dataset()

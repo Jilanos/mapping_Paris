@@ -76,3 +76,13 @@ data class B2Proposal(
     val status: String,
     val createdAt: String?
 )
+
+data class B2ProposalsPage(
+    val proposals: List<B2Proposal>,
+    val total: Int,
+    val limit: Int,
+    val offset: Int,
+    val returned: Int,
+    val hasMore: Boolean,
+    val nextOffset: Int?
+)

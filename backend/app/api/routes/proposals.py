@@ -35,17 +35,27 @@ def list_proposals(
     arrondissement: str | None = None,
     street_name: str | None = None,
     limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
     include_raw: bool = False,
     db: Session = Depends(get_db),
 ) -> ProposalsResponse:
+    service = ProposalService(db, get_settings())
+    result = service.list_proposals(
+        status=status,
+        arrondissement=arrondissement,
+        street_name=street_name,
+        limit=limit,
+        offset=offset,
+        include_raw=include_raw,
+    )
     return ProposalsResponse(
-        proposals=ProposalService(db, get_settings()).list_proposals(
-            status=status,
-            arrondissement=arrondissement,
-            street_name=street_name,
-            limit=limit,
-            include_raw=include_raw,
-        )
+        proposals=result.proposals,
+        total=result.total,
+        limit=result.limit,
+        offset=result.offset,
+        returned=result.returned,
+        has_more=result.has_more,
+        next_offset=result.next_offset,
     )
 
 

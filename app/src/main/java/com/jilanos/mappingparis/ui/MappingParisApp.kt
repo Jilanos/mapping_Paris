@@ -344,6 +344,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onLoadMoreActivities = viewModel::loadMoreB2Activities,
                         onGenerateProposals = viewModel::triggerB2ProposalGeneration,
                         onLoadProposals = viewModel::loadB2Proposals,
+                        onLoadMoreProposals = viewModel::loadMoreB2Proposals,
                         onValidateProposal = viewModel::validateB2Proposal,
                         onDismissProposal = viewModel::dismissB2Proposal,
                         onValidateAll = viewModel::validateAllLoadedB2Proposals,
@@ -1231,6 +1232,7 @@ private fun B2ReviewView(
     onLoadMoreActivities: () -> Unit,
     onGenerateProposals: () -> Unit,
     onLoadProposals: () -> Unit,
+    onLoadMoreProposals: () -> Unit,
     onValidateProposal: (Int) -> Unit,
     onDismissProposal: (Int) -> Unit,
     onValidateAll: () -> Unit,
@@ -1308,6 +1310,13 @@ private fun B2ReviewView(
                     Button(onClick = onLoadProposals, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
                         Text("Charger les propositions")
                     }
+                    OutlinedButton(
+                        onClick = onLoadMoreProposals,
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !b2State.loading && diagnostics.reachedEnd.not()
+                    ) {
+                        Text("Charger plus de propositions")
+                    }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(
                             onClick = { showValidateAllConfirmation = true },
@@ -1341,7 +1350,11 @@ private fun B2ReviewView(
                 if (proposals.isEmpty()) {
                     Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
                         Text(
-                            "Aucun nouveau segment trouve. Essayez de charger plus d'activites ou verifiez que vos activites Strava passent dans Paris.",
+                            if (diagnostics.proposalsLoaded > 0 && diagnostics.reachedEnd) {
+                                "Aucun nouveau segment restant a examiner. Les propositions disponibles sont deja parcourues, non reconnues ou deja traitees."
+                            } else {
+                                "Aucun nouveau segment dans les propositions analysees. Vous pouvez charger plus de propositions ou charger plus d'activites Strava."
+                            },
                             modifier = Modifier.padding(14.dp),
                             style = MaterialTheme.typography.bodyMedium
                         )
@@ -1478,7 +1491,12 @@ private fun B2StatusText(
             )
         }
         Text(
-            "Propositions backend chargees: ${diagnostics.proposalsLoaded}",
+            "Total propositions backend: ${diagnostics.backendTotalProposals}",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF52606D)
+        )
+        Text(
+            "Propositions backend analysees: ${diagnostics.proposalsLoaded} - Pages analysees: ${diagnostics.pagesScanned}",
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF52606D)
         )
@@ -1489,6 +1507,11 @@ private fun B2StatusText(
         )
         Text(
             "A examiner: ${diagnostics.reviewableProposals} - Segments orange affiches: $highlightedProposalCount (${diagnostics.highlightedGeometries} geometries)",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF52606D)
+        )
+        Text(
+            "Fin des propositions atteinte: ${if (diagnostics.reachedEnd) "oui" else "non"}",
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF52606D)
         )

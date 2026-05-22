@@ -258,6 +258,17 @@ Proposal statuses are backend review states only:
 `accepted` does not mean completed in Android. Android integration and final
 manual confirmation remain future work.
 
+`GET /proposals` is paginated:
+
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/proposals?status=proposed&limit=500&offset=0"
+```
+
+The response keeps the `proposals` array and adds pagination metadata:
+`total`, `limit`, `offset`, `returned`, `has_more`, and `next_offset`.
+Android uses this to scan past hidden proposals that are already completed
+locally or not recognized in the local segment dataset.
+
 ## Run the server
 
 ```powershell

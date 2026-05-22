@@ -133,11 +133,17 @@ backend proposals stay hidden from the main review list. They are not deleted
 from the backend silently.
 
 The B2 panel includes diagnostics to explain proposal/map differences:
-backend proposals loaded, non-recognized hidden proposals, already completed
-hidden proposals, reviewable proposals, highlighted logical groups, and
-highlighted local geometries. A large proposal list can collapse to fewer orange
-highlights because several Strava activities can propose the same logical street
-segment.
+total backend proposals, backend proposals analyzed, pages analyzed,
+non-recognized hidden proposals, already completed hidden proposals, reviewable
+proposals, highlighted logical groups, and highlighted local geometries. A large
+proposal list can collapse to fewer orange highlights because several Strava
+activities can propose the same logical street segment.
+
+If the first backend proposal page contains only hidden proposals, Android keeps
+scanning later backend pages until it finds reviewable local segments, reaches
+the end, or reaches the safe per-action scan limit. `Charger plus de
+propositions` continues scanning existing backend proposals without importing
+more Strava activities.
 
 Local E2E checks:
 

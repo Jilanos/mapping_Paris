@@ -11,6 +11,7 @@ import com.jilanos.mappingparis.b2.B2Health
 import com.jilanos.mappingparis.b2.B2Proposal
 import com.jilanos.mappingparis.b2.B2ProposalGenerationSummary
 import com.jilanos.mappingparis.b2.B2ProposalStatus
+import com.jilanos.mappingparis.b2.B2ProposalsPage
 import com.jilanos.mappingparis.b2.B2SyncRunSummary
 import com.jilanos.mappingparis.b2.B2SyncStatus
 import com.jilanos.mappingparis.b2.normalizeBackendUrl
@@ -101,7 +102,11 @@ data class B2IntegrationState(
     val syncStatus: B2SyncStatus? = null,
     val proposalStatus: B2ProposalStatus? = null,
     val lastSyncRun: B2SyncRunSummary? = null,
-    val lastProposalGeneration: B2ProposalGenerationSummary? = null
+    val lastProposalGeneration: B2ProposalGenerationSummary? = null,
+    val proposalScanTotal: Int = 0,
+    val proposalScanPages: Int = 0,
+    val proposalScanHasMore: Boolean = false,
+    val proposalScanNextOffset: Int? = null
 )
 
 data class B2ProposalDiagnostics(
@@ -113,6 +118,9 @@ data class B2ProposalDiagnostics(
     val proposalsAlreadyCompletedHidden: Int = 0,
     val duplicateProposalsHidden: Int = 0,
     val hiddenBackendProposals: Int = 0,
+    val backendTotalProposals: Int = 0,
+    val pagesScanned: Int = 0,
+    val reachedEnd: Boolean = true,
     val reviewableProposals: Int = 0,
     val highlightedLogicalSegments: Int = 0,
     val highlightedGeometries: Int = 0
@@ -258,6 +266,9 @@ data class MappingParisUiState(
                 proposalsAlreadyCompletedHidden = alreadyCompletedHidden,
                 duplicateProposalsHidden = duplicateHidden,
                 hiddenBackendProposals = hidden,
+                backendTotalProposals = b2State.proposalScanTotal,
+                pagesScanned = b2State.proposalScanPages,
+                reachedEnd = !b2State.proposalScanHasMore,
                 reviewableProposals = reviewable.size,
                 highlightedLogicalSegments = highlighted.size,
                 highlightedGeometries = segments.count { it.logicalSegmentId in highlighted }
@@ -602,10 +613,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                     onlyUnprocessed = true,
                     maxActivities = B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES
                 )
-                val proposals = client.getProposals(status = "proposed")
-                b2Proposals.value = proposals
+                applyB2ProposalScan(client, startOffset = 0, append = false)
                 val reviewableCount = filterReviewableB2Proposals(
-                    proposals = proposals,
+                    proposals = b2Proposals.value,
                     segments = segments.value,
                     completionStates = completionStatesSnapshot()
                 ).size
@@ -650,8 +660,17 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     fun loadB2Proposals() {
         viewModelScope.launch {
             runB2Operation("Propositions chargees") { client ->
-                val proposals = client.getProposals(status = "proposed")
-                b2Proposals.value = proposals
+                applyB2ProposalScan(client, startOffset = 0, append = false)
+                b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+            }
+        }
+    }
+
+    fun loadMoreB2Proposals() {
+        viewModelScope.launch {
+            runB2Operation("Propositions supplementaires analysees") { client ->
+                val startOffset = b2State.value.proposalScanNextOffset ?: b2Proposals.value.size
+                applyB2ProposalScan(client, startOffset = startOffset, append = true)
                 b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
             }
         }
@@ -666,7 +685,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                     ?: throw B2ApiException("Proposition non associee a un segment local: validation bloquee")
                 client.acceptProposal(proposalId)
                 repository.setCompleted(logicalId, completed = true)
-                b2Proposals.value = client.getProposals(status = "proposed")
+                applyB2ProposalScan(client, startOffset = 0, append = false)
                 b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
             }
         }
@@ -676,7 +695,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             runB2Operation("Proposition ignoree") { client ->
                 client.dismissProposal(proposalId)
-                b2Proposals.value = client.getProposals(status = "proposed")
+                applyB2ProposalScan(client, startOffset = 0, append = false)
                 b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
             }
         }
@@ -716,7 +735,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 markedCompleted = completedIds.size
             }
             try {
-                b2Proposals.value = client.getProposals(status = "proposed")
+                applyB2ProposalScan(client, startOffset = 0, append = false)
                 b2State.update {
                     it.copy(
                         proposalStatus = client.getProposalStatus(),
@@ -758,7 +777,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 }
             }
             try {
-                b2Proposals.value = client.getProposals(status = "proposed")
+                applyB2ProposalScan(client, startOffset = 0, append = false)
                 b2State.update {
                     it.copy(
                         proposalStatus = client.getProposalStatus(),
@@ -802,6 +821,62 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
     private fun b2ClientOrNull(): B2ApiClient? {
         val normalized = normalizeBackendUrl(backendBaseUrl.value) ?: return null
         return normalized.takeIf { it.isNotBlank() }?.let(::B2ApiClient)
+    }
+
+    private suspend fun applyB2ProposalScan(
+        client: B2ApiClient,
+        startOffset: Int,
+        append: Boolean
+    ) {
+        val existing = if (append) b2Proposals.value else emptyList()
+        val previousPages = if (append) b2State.value.proposalScanPages else 0
+        val scan = scanB2ProposalPages(client, startOffset, existing)
+        b2Proposals.value = scan.proposals
+        b2State.update {
+            it.copy(
+                proposalScanTotal = scan.total,
+                proposalScanPages = previousPages + scan.pagesScanned,
+                proposalScanHasMore = scan.hasMore,
+                proposalScanNextOffset = scan.nextOffset
+            )
+        }
+    }
+
+    private suspend fun scanB2ProposalPages(
+        client: B2ApiClient,
+        startOffset: Int,
+        existing: List<B2Proposal>
+    ): B2ProposalScanResult {
+        val collected = LinkedHashMap<Int, B2Proposal>()
+        existing.forEach { collected[it.id] = it }
+        var offset = startOffset.coerceAtLeast(0)
+        var scannedThisRun = 0
+        var pagesScanned = 0
+        var latestPage: B2ProposalsPage? = null
+        var hasMore = true
+        while (hasMore && scannedThisRun < B2_PROPOSAL_SCAN_MAX_PROPOSALS) {
+            val limit = minOf(B2_PROPOSAL_SCAN_PAGE_SIZE, B2_PROPOSAL_SCAN_MAX_PROPOSALS - scannedThisRun)
+            val page = client.getProposalsPage(status = "proposed", limit = limit, offset = offset)
+            latestPage = page
+            pagesScanned += 1
+            scannedThisRun += page.returned
+            page.proposals.forEach { collected[it.id] = it }
+            val reviewableCount = filterReviewableB2Proposals(
+                proposals = collected.values.toList(),
+                segments = segments.value,
+                completionStates = completionStatesSnapshot()
+            ).size
+            hasMore = page.hasMore && page.nextOffset != null && page.returned > 0
+            if (reviewableCount >= B2_PROPOSAL_SCAN_TARGET_REVIEWABLE || !hasMore) break
+            offset = page.nextOffset ?: break
+        }
+        return B2ProposalScanResult(
+            proposals = collected.values.toList(),
+            total = latestPage?.total ?: collected.size,
+            pagesScanned = pagesScanned,
+            hasMore = latestPage?.hasMore == true,
+            nextOffset = if (latestPage?.hasMore == true) latestPage.nextOffset else null
+        )
     }
 
     private fun nextB2LoadMoreMaxPages(): Int {
@@ -905,11 +980,22 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val B2_LOAD_MORE_SECOND_MAX_PAGES = 5
         const val B2_LOAD_MORE_ABSOLUTE_MAX_PAGES = 10
         const val B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES = 100
+        const val B2_PROPOSAL_SCAN_PAGE_SIZE = 500
+        const val B2_PROPOSAL_SCAN_TARGET_REVIEWABLE = 100
+        const val B2_PROPOSAL_SCAN_MAX_PROPOSALS = 2000
         const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
         const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30
         const val MAX_GPS_COVERAGE_THRESHOLD_PERCENT = 95
     }
 }
+
+private data class B2ProposalScanResult(
+    val proposals: List<B2Proposal>,
+    val total: Int,
+    val pagesScanned: Int,
+    val hasMore: Boolean,
+    val nextOffset: Int?
+)
 
 private fun segmentHasRequiredGpsCoverage(
     segment: StreetSegment,
