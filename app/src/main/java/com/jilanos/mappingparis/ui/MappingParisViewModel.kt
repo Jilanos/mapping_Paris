@@ -104,6 +104,17 @@ data class B2IntegrationState(
     val lastProposalGeneration: B2ProposalGenerationSummary? = null
 )
 
+data class B2ProposalDiagnostics(
+    val proposalsLoaded: Int = 0,
+    val proposedLoaded: Int = 0,
+    val proposalsWithSegmentId: Int = 0,
+    val proposalsWithLogicalSegmentId: Int = 0,
+    val proposalsMatchedLocally: Int = 0,
+    val proposalsUnmatchedLocally: Int = 0,
+    val highlightedLogicalSegments: Int = 0,
+    val highlightedGeometries: Int = 0
+)
+
 data class MappingParisUiState(
     val segments: List<StreetSegment> = emptyList(),
     val completionStates: Map<String, Boolean> = emptyMap(),
@@ -209,19 +220,30 @@ data class MappingParisUiState(
 
     val b2ProposedSegmentIds: Set<String>
         get() {
-            if (b2Proposals.isEmpty()) return emptySet()
-            val logicalIds = segments.map { it.logicalSegmentId }.toSet()
-            val visualToLogical = segments.associate { it.id to it.logicalSegmentId }
             return b2Proposals
                 .filter { it.status == "proposed" }
                 .mapNotNull { proposal ->
-                    when {
-                        proposal.logicalSegmentId in logicalIds -> proposal.logicalSegmentId
-                        proposal.segmentId in visualToLogical -> visualToLogical[proposal.segmentId]
-                        else -> null
-                    }
+                    resolveB2ProposalLogicalId(proposal = proposal, segments = segments)
                 }
+                .filter { completionStates[it] != true }
                 .toSet()
+        }
+
+    val b2ProposalDiagnostics: B2ProposalDiagnostics
+        get() {
+            val proposed = b2Proposals.filter { it.status == "proposed" }
+            val matched = proposed.mapNotNull { resolveB2ProposalLogicalId(it, segments) }
+            val highlighted = b2ProposedSegmentIds
+            return B2ProposalDiagnostics(
+                proposalsLoaded = b2Proposals.size,
+                proposedLoaded = proposed.size,
+                proposalsWithSegmentId = proposed.count { it.segmentId.isNotBlank() },
+                proposalsWithLogicalSegmentId = proposed.count { it.logicalSegmentId.isNotBlank() },
+                proposalsMatchedLocally = matched.size,
+                proposalsUnmatchedLocally = proposed.size - matched.size,
+                highlightedLogicalSegments = highlighted.size,
+                highlightedGeometries = segments.count { it.logicalSegmentId in highlighted }
+            )
         }
 
     companion object {
@@ -565,10 +587,15 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
-    fun acceptB2Proposal(proposalId: Int) {
+    fun validateB2Proposal(proposalId: Int) {
         viewModelScope.launch {
-            runB2Operation("Proposition acceptee cote backend") { client ->
+            runB2Operation("Proposition validee et segment marque parcouru") { client ->
+                val proposal = b2Proposals.value.firstOrNull { it.id == proposalId }
+                    ?: throw B2ApiException("Proposition introuvable localement")
+                val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
+                    ?: throw B2ApiException("Proposition non associee a un segment local: validation bloquee")
                 client.acceptProposal(proposalId)
+                repository.setCompleted(logicalId, completed = true)
                 b2Proposals.value = client.getProposals(status = "proposed")
                 b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
             }
@@ -581,6 +608,103 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 client.dismissProposal(proposalId)
                 b2Proposals.value = client.getProposals(status = "proposed")
                 b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+            }
+        }
+    }
+
+    fun validateAllLoadedB2Proposals() {
+        viewModelScope.launch {
+            val client = b2ClientOrNull()
+            if (client == null) {
+                b2State.update { it.copy(loading = false, error = "Configure d'abord l'URL backend B2", message = null) }
+                return@launch
+            }
+            if (b2State.value.loading) return@launch
+            b2State.update { it.copy(loading = true, error = null, message = null) }
+            val loaded = b2Proposals.value.filter { it.status == "proposed" }
+            var accepted = 0
+            var markedCompleted = 0
+            var failed = 0
+            var unmatched = 0
+            val completedIds = mutableSetOf<String>()
+            loaded.forEach { proposal ->
+                val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
+                if (logicalId == null) {
+                    unmatched += 1
+                    return@forEach
+                }
+                try {
+                    client.acceptProposal(proposal.id)
+                    accepted += 1
+                    completedIds += logicalId
+                } catch (_: Exception) {
+                    failed += 1
+                }
+            }
+            if (completedIds.isNotEmpty()) {
+                repository.setCompleted(completedIds, completed = true)
+                markedCompleted = completedIds.size
+            }
+            try {
+                b2Proposals.value = client.getProposals(status = "proposed")
+                b2State.update {
+                    it.copy(
+                        proposalStatus = client.getProposalStatus(),
+                        loading = false,
+                        error = null,
+                        message = "Tout valider: $accepted acceptees, $markedCompleted segments locaux marques, $failed echecs, $unmatched non mappees"
+                    )
+                }
+            } catch (exception: Exception) {
+                b2State.update {
+                    it.copy(
+                        loading = false,
+                        error = "Validation terminee mais rafraichissement impossible: ${exception.message}",
+                        message = "Tout valider: $accepted acceptees, $markedCompleted segments locaux marques, $failed echecs, $unmatched non mappees"
+                    )
+                }
+            }
+        }
+    }
+
+    fun dismissAllLoadedB2Proposals() {
+        viewModelScope.launch {
+            val client = b2ClientOrNull()
+            if (client == null) {
+                b2State.update { it.copy(loading = false, error = "Configure d'abord l'URL backend B2", message = null) }
+                return@launch
+            }
+            if (b2State.value.loading) return@launch
+            b2State.update { it.copy(loading = true, error = null, message = null) }
+            val loaded = b2Proposals.value.filter { it.status == "proposed" }
+            var dismissed = 0
+            var failed = 0
+            loaded.forEach { proposal ->
+                try {
+                    client.dismissProposal(proposal.id)
+                    dismissed += 1
+                } catch (_: Exception) {
+                    failed += 1
+                }
+            }
+            try {
+                b2Proposals.value = client.getProposals(status = "proposed")
+                b2State.update {
+                    it.copy(
+                        proposalStatus = client.getProposalStatus(),
+                        loading = false,
+                        error = null,
+                        message = "Tout ignorer: $dismissed ignorees, $failed echecs"
+                    )
+                }
+            } catch (exception: Exception) {
+                b2State.update {
+                    it.copy(
+                        loading = false,
+                        error = "Ignorer termine mais rafraichissement impossible: ${exception.message}",
+                        message = "Tout ignorer: $dismissed ignorees, $failed echecs"
+                    )
+                }
             }
         }
     }
@@ -776,3 +900,12 @@ private data class PolylineProjection(
     val distanceToLineMeters: Double,
     val projectedDistanceMeters: Double
 )
+
+fun resolveB2ProposalLogicalId(proposal: B2Proposal, segments: List<StreetSegment>): String? {
+    val logicalIds = segments.map { it.logicalSegmentId }.toSet()
+    if (proposal.logicalSegmentId.isNotBlank() && proposal.logicalSegmentId in logicalIds) {
+        return proposal.logicalSegmentId
+    }
+    if (proposal.segmentId.isBlank()) return null
+    return segments.firstOrNull { it.id == proposal.segmentId }?.logicalSegmentId
+}

@@ -336,6 +336,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         backendBaseUrl = uiState.backendBaseUrl,
                         b2State = uiState.b2State,
                         proposals = uiState.b2Proposals,
+                        diagnostics = uiState.b2ProposalDiagnostics,
                         highlightedProposalCount = uiState.b2ProposedSegmentIds.size,
                         onBackendUrlChange = viewModel::setBackendBaseUrl,
                         onTestBackend = viewModel::testB2Backend,
@@ -343,8 +344,10 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onTriggerSync = viewModel::triggerB2StravaSync,
                         onGenerateProposals = viewModel::triggerB2ProposalGeneration,
                         onLoadProposals = viewModel::loadB2Proposals,
-                        onAcceptProposal = viewModel::acceptB2Proposal,
+                        onValidateProposal = viewModel::validateB2Proposal,
                         onDismissProposal = viewModel::dismissB2Proposal,
+                        onValidateAll = viewModel::validateAllLoadedB2Proposals,
+                        onDismissAll = viewModel::dismissAllLoadedB2Proposals,
                         onClose = { activePanel = OverlayPanel.MENU },
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -1187,6 +1190,7 @@ private fun B2ReviewView(
     backendBaseUrl: String,
     b2State: B2IntegrationState,
     proposals: List<B2Proposal>,
+    diagnostics: B2ProposalDiagnostics,
     highlightedProposalCount: Int,
     onBackendUrlChange: (String) -> Unit,
     onTestBackend: () -> Unit,
@@ -1194,12 +1198,18 @@ private fun B2ReviewView(
     onTriggerSync: () -> Unit,
     onGenerateProposals: () -> Unit,
     onLoadProposals: () -> Unit,
-    onAcceptProposal: (Int) -> Unit,
+    onValidateProposal: (Int) -> Unit,
     onDismissProposal: (Int) -> Unit,
+    onValidateAll: () -> Unit,
+    onDismissAll: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var draftUrl by remember(backendBaseUrl) { mutableStateOf(backendBaseUrl) }
+    var pendingValidation by remember { mutableStateOf<B2Proposal?>(null) }
+    var showValidateAllConfirmation by remember { mutableStateOf(false) }
+    var showDismissAllConfirmation by remember { mutableStateOf(false) }
+    val proposedCount = proposals.count { it.status == "proposed" }
     Surface(
         modifier = modifier.fillMaxSize(),
         color = Color(0xFFF3F7FA)
@@ -1237,7 +1247,7 @@ private fun B2ReviewView(
                             Text("Statut")
                         }
                     }
-                    B2StatusText(b2State, highlightedProposalCount)
+                    B2StatusText(b2State, diagnostics, highlightedProposalCount)
                 }
             }
 
@@ -1258,8 +1268,22 @@ private fun B2ReviewView(
                     Button(onClick = onLoadProposals, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
                         Text("Charger les propositions")
                     }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(
+                            onClick = { showValidateAllConfirmation = true },
+                            enabled = !b2State.loading && proposedCount > 0
+                        ) {
+                            Text("Tout valider")
+                        }
+                        OutlinedButton(
+                            onClick = { showDismissAllConfirmation = true },
+                            enabled = !b2State.loading && proposedCount > 0
+                        ) {
+                            Text("Tout ignorer")
+                        }
+                    }
                     Text(
-                        "Accepter la proposition ne marque pas encore le segment comme parcouru dans l'app.",
+                        "Valider une proposition marque explicitement le segment local comme parcouru. Ignorer ne modifie pas la progression locale.",
                         style = MaterialTheme.typography.bodySmall,
                         color = Color(0xFF52606D)
                     )
@@ -1287,7 +1311,7 @@ private fun B2ReviewView(
                         B2ProposalRow(
                             proposal = proposal,
                             loading = b2State.loading,
-                            onAccept = { onAcceptProposal(proposal.id) },
+                            onValidate = { pendingValidation = proposal },
                             onDismiss = { onDismissProposal(proposal.id) }
                         )
                     }
@@ -1295,11 +1319,93 @@ private fun B2ReviewView(
             }
         }
     }
+
+    pendingValidation?.let { proposal ->
+        AlertDialog(
+            onDismissRequest = { pendingValidation = null },
+            title = { Text("Valider ce segment ?") },
+            text = {
+                Text("Cette action marquera ce segment comme parcouru dans votre progression locale.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pendingValidation = null
+                        onValidateProposal(proposal.id)
+                    }
+                ) {
+                    Text("Valider")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingValidation = null }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    if (showValidateAllConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showValidateAllConfirmation = false },
+            title = { Text("Tout valider ?") },
+            text = {
+                Text(
+                    "Cette action marquera tous les segments proposes actuellement charges comme parcourus dans votre progression locale. " +
+                        "Cette action peut modifier fortement vos statistiques.\n\n" +
+                        "Propositions a valider: ${diagnostics.proposedLoaded}\n" +
+                        "Segments locaux correspondants: ${diagnostics.highlightedLogicalSegments}\n" +
+                        "Propositions non mappees: ${diagnostics.proposalsUnmatchedLocally}"
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showValidateAllConfirmation = false
+                        onValidateAll()
+                    }
+                ) {
+                    Text("Tout valider")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showValidateAllConfirmation = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
+
+    if (showDismissAllConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showDismissAllConfirmation = false },
+            title = { Text("Tout ignorer ?") },
+            text = {
+                Text("Cette action ignorera toutes les propositions actuellement chargees. Votre progression locale ne sera pas modifiee.")
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDismissAllConfirmation = false
+                        onDismissAll()
+                    }
+                ) {
+                    Text("Tout ignorer")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDismissAllConfirmation = false }) {
+                    Text("Annuler")
+                }
+            }
+        )
+    }
 }
 
 @Composable
 private fun B2StatusText(
     b2State: B2IntegrationState,
+    diagnostics: B2ProposalDiagnostics,
     highlightedProposalCount: Int
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -1325,7 +1431,12 @@ private fun B2StatusText(
             )
         }
         Text(
-            "Segments surlignes: $highlightedProposalCount",
+            "Diagnostics: ${diagnostics.proposalsLoaded} chargees, ${diagnostics.proposedLoaded} proposees, ${diagnostics.proposalsMatchedLocally} mappees, ${diagnostics.proposalsUnmatchedLocally} non mappees",
+            style = MaterialTheme.typography.bodySmall,
+            color = Color(0xFF52606D)
+        )
+        Text(
+            "Surlignage: $highlightedProposalCount groupes logiques, ${diagnostics.highlightedGeometries} geometries locales",
             style = MaterialTheme.typography.bodySmall,
             color = Color(0xFF52606D)
         )
@@ -1345,7 +1456,7 @@ private fun B2StatusText(
 private fun B2ProposalRow(
     proposal: B2Proposal,
     loading: Boolean,
-    onAccept: () -> Unit,
+    onValidate: () -> Unit,
     onDismiss: () -> Unit
 ) {
     Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
@@ -1372,9 +1483,21 @@ private fun B2ProposalRow(
                 style = MaterialTheme.typography.bodySmall,
                 color = Color(0xFF52606D)
             )
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = onAccept, enabled = !loading) { Text("Accepter") }
-                OutlinedButton(onClick = onDismiss, enabled = !loading) { Text("Ignorer") }
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onValidate,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Valider et marquer parcouru")
+                }
+                OutlinedButton(
+                    onClick = onDismiss,
+                    enabled = !loading,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Ignorer")
+                }
             }
         }
     }

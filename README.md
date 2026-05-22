@@ -101,11 +101,22 @@ Current B2 Android scope:
 - manual Strava sync trigger;
 - manual proposal generation trigger;
 - loading and highlighting proposed segments;
-- accepting or dismissing proposals on the backend.
+- validating a proposal with confirmation, which accepts it on the backend and
+  marks the matching local logical segment as completed;
+- ignoring a proposal on the backend without changing local progression;
+- bulk actions for currently loaded proposals: `Tout valider` and
+  `Tout ignorer`, both protected by confirmation.
 
-Important limitation: accepting a B2 proposal does not mark the segment as
-completed in the Android Room database yet. Local completion remains controlled
-by the existing manual validation flow.
+Important: Strava B2 still does not automatically complete streets. Local
+progress is changed only after an explicit Android user action. `Tout valider`
+applies only to currently loaded proposed proposals, not every proposal that may
+exist on the backend.
+
+The B2 panel includes diagnostics to explain proposal/map differences:
+proposals loaded, proposed proposals, locally matched proposals, unmatched
+proposals, highlighted logical groups, and highlighted local geometries. A large
+proposal list can collapse to fewer orange highlights because several Strava
+activities can propose the same logical street segment.
 
 Local E2E checks:
 
@@ -116,6 +127,13 @@ backend\scripts\e2e-check-local.ps1
 Real Strava validation requires an untracked `backend/.env` containing
 `TOKEN_ENCRYPTION_KEY`, `STRAVA_CLIENT_ID`, `STRAVA_CLIENT_SECRET`, and
 `STRAVA_REDIRECT_URI`. See `backend/README.md` for the full checklist.
+
+Remaining B2 work:
+
+- backend deployment;
+- release packaging;
+- optional backend bulk endpoints if Android-side loops become too slow;
+- matching threshold tuning after more route samples.
 
 ## Segment Dataset
 
