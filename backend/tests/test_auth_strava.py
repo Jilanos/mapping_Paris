@@ -61,10 +61,10 @@ def auth_client(tmp_path, monkeypatch):
         "STRAVA_CLIENT_SECRET",
         "STRAVA_REDIRECT_URI",
         "TOKEN_ENCRYPTION_KEY",
-        "STRAVA_SCOPES",
-        "AUTH_STATE_TTL_SECONDS",
     ):
-        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(name, "")
+    monkeypatch.setenv("STRAVA_SCOPES", "read,activity:read_all")
+    monkeypatch.setenv("AUTH_STATE_TTL_SECONDS", "600")
     get_settings.cache_clear()
 
     def override_get_db():
@@ -205,6 +205,7 @@ def test_callback_fails_without_token_encryption_key(auth_client, monkeypatch) -
     monkeypatch.setenv("STRAVA_CLIENT_ID", "example-client-id")
     monkeypatch.setenv("STRAVA_CLIENT_SECRET", "example-client-secret")
     monkeypatch.setenv("STRAVA_REDIRECT_URI", "http://localhost:8000/auth/strava/callback")
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", "")
     get_settings.cache_clear()
     start = client.get("/auth/strava/start", follow_redirects=False)
     state = parse_qs(urlparse(start.headers["location"]).query)["state"][0]

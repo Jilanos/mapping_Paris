@@ -88,6 +88,52 @@ def _seed_dataset(session_factory, arrondissement: str = "18", street_name: str 
         return version.id
 
 
+def _seed_duplicate_logical_dataset(session_factory) -> int:
+    with session_factory() as db:
+        version = SegmentDatasetVersion(
+            dataset_hash="hash-duplicate-logical",
+            source_path="fixture.geojson",
+            source_file_name="fixture.geojson",
+            source_file_size_bytes=456,
+            segment_count=2,
+            logical_segment_count=1,
+            is_active=True,
+        )
+        db.add(version)
+        db.commit()
+        db.refresh(version)
+        shared = {
+            "dataset_version_id": version.id,
+            "logical_segment_id": "logical-duplicate",
+            "street_name": "Boulevard de la Chapelle",
+            "arrondissement": "18",
+            "length_meters": 80.0,
+            "accessibility": "public_walk_cycle",
+            "min_lon": 2.0,
+            "max_lon": 2.001,
+        }
+        db.add_all(
+            [
+                B2StreetSegment(
+                    **shared,
+                    segment_id="seg-weaker-offset",
+                    geometry_json=json.dumps([[2.0, 48.00008], [2.001, 48.00008]]),
+                    min_lat=48.00008,
+                    max_lat=48.00008,
+                ),
+                B2StreetSegment(
+                    **shared,
+                    segment_id="seg-best-exact",
+                    geometry_json=json.dumps([[2.0, 48.0], [2.001, 48.0]]),
+                    min_lat=48.0,
+                    max_lat=48.0,
+                ),
+            ]
+        )
+        db.commit()
+        return version.id
+
+
 def _seed_stream(session_factory, activity_id: str = "activity-1", sport_type: str = "Run") -> None:
     with session_factory() as db:
         db.add(
@@ -161,7 +207,76 @@ def test_duplicate_generation_does_not_duplicate_proposals(proposal_client) -> N
     second = client.post("/proposals/generate")
 
     assert second.status_code == 200
-    assert second.json()["proposals_updated"] == 1
+    assert second.json()["proposals_updated"] == 0
+    assert second.json()["proposals_skipped"] == 1
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).count() == 1
+
+
+def test_duplicate_logical_segments_keep_best_candidate(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_duplicate_logical_dataset(session_factory)
+    _seed_stream(session_factory, activity_id="activity-duplicate")
+
+    response = client.post("/proposals/generate")
+
+    assert response.status_code == 200
+    assert response.json()["proposals_created"] == 1
+    with session_factory() as db:
+        proposals = db.query(SegmentMatchProposal).all()
+        assert len(proposals) == 1
+        proposal = proposals[0]
+        assert proposal.logical_segment_id == "logical-duplicate"
+        assert proposal.segment_id == "seg-best-exact"
+        assert proposal.confidence_score > 0.9
+
+    second = client.post("/proposals/generate")
+
+    assert second.status_code == 200
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).count() == 1
+
+
+def test_existing_proposed_proposal_updates_only_when_candidate_is_better(proposal_client) -> None:
+    client, session_factory = proposal_client
+    dataset_version_id = _seed_dataset(session_factory)
+    _seed_stream(session_factory)
+    with session_factory() as db:
+        db.add(
+            SegmentMatchProposal(
+                dataset_version_id=dataset_version_id,
+                strava_activity_id="activity-1",
+                segment_id="old-seg",
+                logical_segment_id="logical-18",
+                street_name="Old",
+                arrondissement="18",
+                segment_length_meters=80.0,
+                covered_length_meters=20.0,
+                coverage_ratio=0.25,
+                min_distance_meters=20.0,
+                avg_distance_meters=20.0,
+                max_distance_meters=20.0,
+                matched_points_count=2,
+                confidence_score=0.2,
+                status="proposed",
+            )
+        )
+        db.commit()
+
+    response = client.post("/proposals/generate")
+
+    assert response.status_code == 200
+    assert response.json()["proposals_updated"] == 1
+    with session_factory() as db:
+        proposal = db.query(SegmentMatchProposal).one()
+        assert proposal.segment_id == "seg-18"
+        assert proposal.confidence_score > 0.2
+
+    second = client.post("/proposals/generate")
+
+    assert second.status_code == 200
+    assert second.json()["proposals_updated"] == 0
+    assert second.json()["proposals_skipped"] == 1
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).count() == 1
 
@@ -178,6 +293,8 @@ def test_accepted_proposal_is_not_overwritten(proposal_client) -> None:
 
     assert response.json()["proposals_skipped"] == 1
     assert client.get("/proposals?status=accepted").json()["proposals"][0]["status"] == "accepted"
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).one().status == "accepted"
 
 
 def test_dismissed_proposal_is_not_overwritten(proposal_client) -> None:
@@ -192,6 +309,8 @@ def test_dismissed_proposal_is_not_overwritten(proposal_client) -> None:
 
     assert response.json()["proposals_skipped"] == 1
     assert client.get("/proposals?status=dismissed").json()["proposals"][0]["status"] == "dismissed"
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).one().status == "dismissed"
 
 
 def test_proposals_list_and_filter_by_arrondissement(proposal_client) -> None:

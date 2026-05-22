@@ -64,12 +64,8 @@ def sync_client(tmp_path, monkeypatch):
         "STRAVA_CLIENT_SECRET",
         "STRAVA_REDIRECT_URI",
         "TOKEN_ENCRYPTION_KEY",
-        "STRAVA_SYNC_PER_PAGE",
-        "STRAVA_SYNC_MAX_PAGES",
-        "STRAVA_SYNC_SPORT_TYPES",
-        "STRAVA_TOKEN_REFRESH_MARGIN_SECONDS",
     ):
-        monkeypatch.delenv(name, raising=False)
+        monkeypatch.setenv(name, "")
     monkeypatch.setenv("STRAVA_CLIENT_ID", "example-client-id")
     monkeypatch.setenv("STRAVA_CLIENT_SECRET", "example-client-secret")
     monkeypatch.setenv("STRAVA_REDIRECT_URI", "http://localhost:8000/auth/strava/callback")
@@ -151,7 +147,7 @@ def test_sync_returns_error_when_no_token_is_connected(sync_client) -> None:
 
 def test_sync_returns_error_when_encryption_key_missing(sync_client, monkeypatch) -> None:
     client, _, _ = sync_client
-    monkeypatch.delenv("TOKEN_ENCRYPTION_KEY", raising=False)
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", "")
     get_settings.cache_clear()
 
     response = client.post("/sync/strava")

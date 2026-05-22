@@ -1,6 +1,8 @@
+from dataclasses import dataclass
 import json
 import math
 
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -19,10 +21,19 @@ from app.schemas.proposals import (
     ProposalStatusResponse,
 )
 from app.services.segment_matcher import SegmentMatcher
+from app.services.segment_matcher import SegmentMatch
 
 
 class ProposalGenerationError(RuntimeError):
     pass
+
+
+@dataclass(frozen=True)
+class ProposalCandidate:
+    dataset_version_id: int
+    stream: StravaStream
+    segment: B2StreetSegment
+    match: SegmentMatch
 
 
 class ProposalService:
@@ -61,6 +72,7 @@ class ProposalService:
         proposals_updated = 0
         proposals_skipped = 0
         errors_count = 0
+        best_candidates: dict[tuple[int, str, str], ProposalCandidate] = {}
 
         for stream in streams:
             activities_processed.add(stream.strava_activity_id)
@@ -72,17 +84,43 @@ class ProposalService:
                     match = self._matcher.match(stream_points, segment)
                     if match is None:
                         continue
-                    result = self._upsert_proposal(active_dataset.id, stream, segment, match)
-                    if result == "created":
-                        proposals_created += 1
-                    elif result == "updated":
-                        proposals_updated += 1
-                    else:
-                        proposals_skipped += 1
+                    candidate = ProposalCandidate(
+                        dataset_version_id=active_dataset.id,
+                        stream=stream,
+                        segment=segment,
+                        match=match,
+                    )
+                    key = (
+                        active_dataset.id,
+                        stream.strava_activity_id,
+                        segment.logical_segment_id,
+                    )
+                    current = best_candidates.get(key)
+                    if current is None or self._candidate_is_better(candidate, current):
+                        best_candidates[key] = candidate
             except Exception:
                 errors_count += 1
 
-        self._db.commit()
+        for candidate in best_candidates.values():
+            result = self._upsert_proposal(
+                candidate.dataset_version_id,
+                candidate.stream,
+                candidate.segment,
+                candidate.match,
+            )
+            if result == "created":
+                proposals_created += 1
+            elif result == "updated":
+                proposals_updated += 1
+            else:
+                proposals_skipped += 1
+
+        try:
+            self._db.commit()
+        except IntegrityError as exc:
+            self._db.rollback()
+            raise ProposalGenerationError("Proposal generation created duplicate logical segment candidates") from exc
+
         return ProposalGenerationSummary(
             activities_processed=len(activities_processed),
             streams_processed=len(streams),
@@ -199,6 +237,8 @@ class ProposalService:
         )
         if existing is not None and existing.status in {"accepted", "dismissed"}:
             return "skipped"
+        if existing is not None and not self._match_is_better_than_existing(match, existing):
+            return "skipped"
         proposal = existing or SegmentMatchProposal(
             dataset_version_id=dataset_version_id,
             strava_activity_id=stream.strava_activity_id,
@@ -230,6 +270,28 @@ class ProposalService:
         proposal.raw_match_json = json.dumps(match.raw_match, separators=(",", ":"))
         self._db.add(proposal)
         return "created" if existing is None else "updated"
+
+    def _candidate_is_better(self, candidate: ProposalCandidate, current: ProposalCandidate) -> bool:
+        return self._candidate_sort_key(candidate) > self._candidate_sort_key(current)
+
+    def _candidate_sort_key(self, candidate: ProposalCandidate) -> tuple[float, float, float, str]:
+        return (
+            candidate.match.confidence_score,
+            candidate.match.coverage_ratio,
+            -candidate.match.avg_distance_meters,
+            candidate.segment.segment_id,
+        )
+
+    def _match_is_better_than_existing(self, match: SegmentMatch, existing: SegmentMatchProposal) -> bool:
+        return (
+            match.confidence_score,
+            match.coverage_ratio,
+            -match.avg_distance_meters,
+        ) > (
+            existing.confidence_score,
+            existing.coverage_ratio,
+            -existing.avg_distance_meters,
+        )
 
     def _count_status(self, status: str) -> int:
         return (
