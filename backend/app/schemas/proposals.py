@@ -1,11 +1,21 @@
 from datetime import datetime
 
 from pydantic import BaseModel
+from pydantic import Field
+
+
+class ProposalGenerationRequest(BaseModel):
+    only_unprocessed: bool = False
+    max_activities: int | None = Field(default=None, ge=1)
 
 
 class ProposalGenerationSummary(BaseModel):
+    activities_with_streams_total: int = 0
+    activities_already_had_proposals: int = 0
+    activities_without_existing_proposals: int = 0
     activities_processed: int
     streams_processed: int
+    activities_skipped_already_processed: int = 0
     candidate_segments_checked: int
     proposals_created: int
     proposals_updated: int

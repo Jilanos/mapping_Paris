@@ -1470,6 +1470,13 @@ private fun B2StatusText(
                 style = MaterialTheme.typography.bodySmall
             )
         }
+        b2State.lastProposalGeneration?.let { generation ->
+            Text(
+                "Traitees pour propositions: ${generation.activitiesProcessed}/${generation.activitiesWithStreamsTotal} - creees: ${generation.proposalsCreated}, ignorees: ${generation.proposalsSkipped}",
+                style = MaterialTheme.typography.bodySmall,
+                color = Color(0xFF52606D)
+            )
+        }
         Text(
             "Propositions backend chargees: ${diagnostics.proposalsLoaded}",
             style = MaterialTheme.typography.bodySmall,

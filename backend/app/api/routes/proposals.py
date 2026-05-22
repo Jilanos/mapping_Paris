@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.schemas.proposals import (
+    ProposalGenerationRequest,
     ProposalGenerationSummary,
     ProposalMutationResponse,
     ProposalsResponse,
@@ -15,9 +16,15 @@ router = APIRouter(prefix="/proposals", tags=["proposals"])
 
 
 @router.post("/generate", response_model=ProposalGenerationSummary)
-def generate_proposals(db: Session = Depends(get_db)) -> ProposalGenerationSummary:
+def generate_proposals(
+    request: ProposalGenerationRequest | None = None,
+    db: Session = Depends(get_db),
+) -> ProposalGenerationSummary:
     try:
-        return ProposalService(db, get_settings()).generate()
+        return ProposalService(db, get_settings()).generate(
+            only_unprocessed=request.only_unprocessed if request else False,
+            max_activities=request.max_activities if request else None,
+        )
     except ProposalGenerationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

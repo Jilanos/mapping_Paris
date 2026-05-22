@@ -117,7 +117,8 @@ exist on the backend.
 Use `Charger plus d'activites` when the current review list is empty because
 the most recent Strava Run/Ride activities have already been accepted or
 ignored. Android progressively asks the backend to scan a wider Strava page
-window, generate proposals again, then refresh the filtered review list.
+window, generate proposals for activities that were not already processed, then
+refresh the filtered review list.
 
 The Android review list is filtered before display. It only shows new segments
 that can actually be validated locally:

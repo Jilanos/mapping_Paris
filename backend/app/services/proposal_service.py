@@ -42,23 +42,36 @@ class ProposalService:
         self._settings = settings
         self._matcher = SegmentMatcher(settings)
 
-    def generate(self) -> ProposalGenerationSummary:
+    def generate(
+        self,
+        only_unprocessed: bool = False,
+        max_activities: int | None = None,
+    ) -> ProposalGenerationSummary:
         active_dataset = self._active_dataset()
         if active_dataset is None:
             raise ProposalGenerationError("No active segment dataset is loaded")
 
-        streams = (
-            self._db.query(StravaStream)
-            .join(StravaActivity, StravaActivity.strava_activity_id == StravaStream.strava_activity_id)
-            .filter(StravaActivity.sport_type.in_(self._settings.sync_sport_types))
-            .order_by(StravaStream.created_at.asc(), StravaStream.id.asc())
-            .limit(self._settings.match_max_activities_per_run)
-            .all()
+        activity_ids_with_proposals = self._activity_ids_with_proposals(active_dataset.id)
+        streams_total = self._eligible_stream_count()
+        effective_limit = self._effective_activity_limit(max_activities)
+        streams = self._streams_for_generation(
+            activity_ids_with_proposals,
+            only_unprocessed=only_unprocessed,
+            limit=effective_limit,
         )
+        skipped_already_processed = 0
+        if only_unprocessed:
+            skipped_already_processed = min(streams_total, len(activity_ids_with_proposals))
+        elif len(streams) < effective_limit:
+            skipped_already_processed = 0
         if not streams:
             return ProposalGenerationSummary(
+                activities_with_streams_total=streams_total,
+                activities_already_had_proposals=len(activity_ids_with_proposals),
+                activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
                 activities_processed=0,
                 streams_processed=0,
+                activities_skipped_already_processed=skipped_already_processed,
                 candidate_segments_checked=0,
                 proposals_created=0,
                 proposals_updated=0,
@@ -122,14 +135,66 @@ class ProposalService:
             raise ProposalGenerationError("Proposal generation created duplicate logical segment candidates") from exc
 
         return ProposalGenerationSummary(
+            activities_with_streams_total=streams_total,
+            activities_already_had_proposals=len(activity_ids_with_proposals),
+            activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
             activities_processed=len(activities_processed),
             streams_processed=len(streams),
+            activities_skipped_already_processed=skipped_already_processed,
             candidate_segments_checked=candidate_segments_checked,
             proposals_created=proposals_created,
             proposals_updated=proposals_updated,
             proposals_skipped=proposals_skipped,
             errors_count=errors_count,
         )
+
+    def _eligible_stream_query(self):
+        return (
+            self._db.query(StravaStream)
+            .join(StravaActivity, StravaActivity.strava_activity_id == StravaStream.strava_activity_id)
+            .filter(StravaActivity.sport_type.in_(self._settings.sync_sport_types))
+        )
+
+    def _eligible_stream_count(self) -> int:
+        return self._eligible_stream_query().count()
+
+    def _activity_ids_with_proposals(self, dataset_version_id: int) -> set[str]:
+        rows = (
+            self._db.query(SegmentMatchProposal.strava_activity_id)
+            .filter(SegmentMatchProposal.dataset_version_id == dataset_version_id)
+            .distinct()
+            .all()
+        )
+        return {str(row[0]) for row in rows}
+
+    def _effective_activity_limit(self, requested_max_activities: int | None) -> int:
+        configured = max(1, self._settings.match_max_activities_per_run)
+        requested = requested_max_activities if requested_max_activities is not None else configured
+        return min(max(1, requested), 500)
+
+    def _streams_for_generation(
+        self,
+        activity_ids_with_proposals: set[str],
+        only_unprocessed: bool,
+        limit: int,
+    ) -> list[StravaStream]:
+        unprocessed = (
+            self._eligible_stream_query()
+            .filter(~StravaStream.strava_activity_id.in_(activity_ids_with_proposals))
+            .order_by(StravaStream.created_at.asc(), StravaStream.id.asc())
+            .limit(limit)
+            .all()
+        )
+        if only_unprocessed or len(unprocessed) >= limit:
+            return unprocessed
+        existing = (
+            self._eligible_stream_query()
+            .filter(StravaStream.strava_activity_id.in_(activity_ids_with_proposals))
+            .order_by(StravaStream.created_at.asc(), StravaStream.id.asc())
+            .limit(limit - len(unprocessed))
+            .all()
+        )
+        return unprocessed + existing
 
     def list_proposals(
         self,

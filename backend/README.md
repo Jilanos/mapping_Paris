@@ -218,6 +218,22 @@ Implemented routes:
 the active segment dataset. It does not call Strava directly and it does not
 write Android completion state.
 
+The default request body is empty. After importing older activities, Android
+uses an unprocessed-stream mode so proposal generation does not keep retrying
+the same recent activities:
+
+```json
+{
+  "only_unprocessed": true,
+  "max_activities": 100
+}
+```
+
+In this mode, streams whose activity already has proposals for the active
+dataset are skipped. The response reports how many activities had streams, how
+many already had proposals, how many were processed, and how many proposals were
+created, updated, or skipped.
+
 Matching assumptions:
 
 - GPS stream points are compared with segment polylines using a lightweight

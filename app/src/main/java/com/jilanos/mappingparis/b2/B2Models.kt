@@ -37,8 +37,12 @@ data class B2SyncStatus(
 )
 
 data class B2ProposalGenerationSummary(
+    val activitiesWithStreamsTotal: Int,
+    val activitiesAlreadyHadProposals: Int,
+    val activitiesWithoutExistingProposals: Int,
     val activitiesProcessed: Int,
     val streamsProcessed: Int,
+    val activitiesSkippedAlreadyProcessed: Int,
     val candidateSegmentsChecked: Int,
     val proposalsCreated: Int,
     val proposalsUpdated: Int,

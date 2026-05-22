@@ -161,6 +161,11 @@ def _seed_stream(session_factory, activity_id: str = "activity-1", sport_type: s
         db.commit()
 
 
+def _seed_many_streams(session_factory, count: int, start_id: int = 1) -> None:
+    for activity_id in range(start_id, start_id + count):
+        _seed_stream(session_factory, activity_id=f"activity-{activity_id}", sport_type="Run")
+
+
 def test_proposal_generation_fails_without_active_dataset(proposal_client) -> None:
     client, _ = proposal_client
 
@@ -177,6 +182,7 @@ def test_proposal_generation_returns_no_proposals_without_streams(proposal_clien
     response = client.post("/proposals/generate")
 
     assert response.status_code == 200
+    assert response.json()["activities_with_streams_total"] == 0
     assert response.json()["proposals_created"] == 0
     assert response.json()["streams_processed"] == 0
 
@@ -190,6 +196,9 @@ def test_proposal_generation_creates_proposal_from_stream(proposal_client) -> No
 
     assert response.status_code == 200
     payload = response.json()
+    assert payload["activities_with_streams_total"] == 1
+    assert payload["activities_without_existing_proposals"] == 1
+    assert payload["activities_processed"] == 1
     assert payload["proposals_created"] == 1
     assert payload["candidate_segments_checked"] == 1
     with session_factory() as db:
@@ -207,10 +216,57 @@ def test_duplicate_generation_does_not_duplicate_proposals(proposal_client) -> N
     second = client.post("/proposals/generate")
 
     assert second.status_code == 200
+    assert second.json()["activities_already_had_proposals"] == 1
     assert second.json()["proposals_updated"] == 0
     assert second.json()["proposals_skipped"] == 1
     with session_factory() as db:
         assert db.query(SegmentMatchProposal).count() == 1
+
+
+def test_generation_prioritizes_unprocessed_streams_after_first_batch(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_many_streams(session_factory, count=30)
+
+    first = client.post("/proposals/generate")
+
+    assert first.status_code == 200
+    assert first.json()["activities_processed"] == 20
+    assert first.json()["proposals_created"] == 20
+
+    second = client.post(
+        "/proposals/generate",
+        json={"only_unprocessed": True, "max_activities": 100},
+    )
+
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["activities_with_streams_total"] == 30
+    assert payload["activities_already_had_proposals"] == 20
+    assert payload["activities_without_existing_proposals"] == 10
+    assert payload["activities_processed"] == 10
+    assert payload["proposals_created"] == 10
+    assert payload["activities_skipped_already_processed"] == 20
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).count() == 30
+
+
+def test_generation_only_unprocessed_does_not_reprocess_existing_batch(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_many_streams(session_factory, count=3)
+    client.post("/proposals/generate", json={"only_unprocessed": True, "max_activities": 10})
+
+    second = client.post("/proposals/generate", json={"only_unprocessed": True, "max_activities": 10})
+
+    assert second.status_code == 200
+    payload = second.json()
+    assert payload["activities_processed"] == 0
+    assert payload["streams_processed"] == 0
+    assert payload["activities_skipped_already_processed"] == 3
+    assert payload["proposals_created"] == 0
+    with session_factory() as db:
+        assert db.query(SegmentMatchProposal).count() == 3
 
 
 def test_duplicate_logical_segments_keep_best_candidate(proposal_client) -> None:

@@ -39,8 +39,19 @@ class B2ApiClient(private val baseUrl: String) {
         return B2JsonParser.syncStatus(json)
     }
 
-    suspend fun triggerProposalGeneration(): B2ProposalGenerationSummary {
-        val json = requestJson(path = "/proposals/generate", method = "POST")
+    suspend fun triggerProposalGeneration(
+        onlyUnprocessed: Boolean? = null,
+        maxActivities: Int? = null
+    ): B2ProposalGenerationSummary {
+        val body = if (onlyUnprocessed != null || maxActivities != null) {
+            JSONObject().apply {
+                onlyUnprocessed?.let { put("only_unprocessed", it) }
+                maxActivities?.let { put("max_activities", it) }
+            }
+        } else {
+            null
+        }
+        val json = requestJson(path = "/proposals/generate", method = "POST", body = body)
         return B2JsonParser.proposalGenerationSummary(json)
     }
 
@@ -154,8 +165,12 @@ object B2JsonParser {
 
     fun proposalGenerationSummary(json: JSONObject): B2ProposalGenerationSummary {
         return B2ProposalGenerationSummary(
+            activitiesWithStreamsTotal = json.optInt("activities_with_streams_total"),
+            activitiesAlreadyHadProposals = json.optInt("activities_already_had_proposals"),
+            activitiesWithoutExistingProposals = json.optInt("activities_without_existing_proposals"),
             activitiesProcessed = json.optInt("activities_processed"),
             streamsProcessed = json.optInt("streams_processed"),
+            activitiesSkippedAlreadyProcessed = json.optInt("activities_skipped_already_processed"),
             candidateSegmentsChecked = json.optInt("candidate_segments_checked"),
             proposalsCreated = json.optInt("proposals_created"),
             proposalsUpdated = json.optInt("proposals_updated"),

@@ -598,7 +598,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             val targetMaxPages = nextB2LoadMoreMaxPages()
             try {
                 val syncRun = client.triggerStravaSync(maxPages = targetMaxPages)
-                val proposalGeneration = client.triggerProposalGeneration()
+                val proposalGeneration = client.triggerProposalGeneration(
+                    onlyUnprocessed = true,
+                    maxActivities = B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES
+                )
                 val proposals = client.getProposals(status = "proposed")
                 b2Proposals.value = proposals
                 val reviewableCount = filterReviewableB2Proposals(
@@ -611,9 +614,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 val proposalStatus = client.getProposalStatus()
                 val generatedCount = proposalGeneration.proposalsCreated + proposalGeneration.proposalsUpdated
                 val message = if (reviewableCount == 0) {
-                    "Aucun nouveau segment trouve. Essayez de charger plus d'activites ou verifiez que vos activites Strava passent dans Paris."
+                    b2LoadMoreEmptyMessage(syncRun, proposalGeneration)
                 } else {
-                    "Activites supplementaires: ${syncRun.activitiesCreated} importees, ${syncRun.streamsDownloaded} traces, $generatedCount propositions, $reviewableCount nouveaux segments a examiner"
+                    "Activites supplementaires: ${syncRun.activitiesCreated} importees, ${syncRun.streamsDownloaded} traces, ${proposalGeneration.activitiesProcessed} activites traitees, $generatedCount propositions, $reviewableCount nouveaux segments a examiner"
                 }
                 b2State.update {
                     it.copy(
@@ -809,6 +812,24 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    private fun b2LoadMoreEmptyMessage(
+        syncRun: B2SyncRunSummary,
+        proposalGeneration: B2ProposalGenerationSummary
+    ): String {
+        return when {
+            syncRun.streamsDownloaded == 0 && syncRun.activitiesCreated == 0 ->
+                "Aucun nouveau segment trouve: aucune activite supplementaire avec trace GPS n'a ete importee."
+            proposalGeneration.activitiesProcessed == 0 && proposalGeneration.activitiesWithoutExistingProposals == 0 ->
+                "Aucun nouveau segment trouve: toutes les activites avec traces avaient deja ete traitees."
+            proposalGeneration.activitiesProcessed == 0 ->
+                "Aucun nouveau segment trouve: aucune nouvelle trace Strava n'a pu etre traitee."
+            proposalGeneration.proposalsCreated == 0 && proposalGeneration.proposalsUpdated == 0 ->
+                "Aucun nouveau segment trouve: les activites traitees sont probablement hors Paris ou ne passent pas les seuils de correspondance."
+            else ->
+                "Aucun nouveau segment trouve: les propositions sont deja validees, ignorees, non reconnues localement ou deja parcourues."
+        }
+    }
+
     private fun reviewableB2ProposalsSnapshot(): List<B2Proposal> {
         return filterReviewableB2Proposals(
             proposals = b2Proposals.value,
@@ -883,6 +904,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val B2_LOAD_MORE_FIRST_MAX_PAGES = 3
         const val B2_LOAD_MORE_SECOND_MAX_PAGES = 5
         const val B2_LOAD_MORE_ABSOLUTE_MAX_PAGES = 10
+        const val B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES = 100
         const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
         const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30
         const val MAX_GPS_COVERAGE_THRESHOLD_PERCENT = 95
