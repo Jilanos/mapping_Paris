@@ -209,6 +209,9 @@ only with `include_geometry=true`.
 Implemented routes:
 
 - `POST /proposals/generate`
+- `POST /proposals/generate/jobs`
+- `GET /proposals/generate/jobs/{job_id}`
+- `GET /proposals/generate/jobs/latest`
 - `GET /proposals`
 - `GET /proposals/status`
 - `POST /proposals/{proposal_id}/dismiss`
@@ -217,6 +220,20 @@ Implemented routes:
 `POST /proposals/generate` runs synchronously against stored Strava streams and
 the active segment dataset. It does not call Strava directly and it does not
 write Android completion state.
+
+Android uses the asynchronous job route instead of waiting on the synchronous
+request:
+
+```powershell
+$job = Invoke-RestMethod -Method Post "http://127.0.0.1:8000/proposals/generate/jobs" `
+  -ContentType "application/json" `
+  -Body '{"only_unprocessed":true,"max_activities":100}'
+Invoke-RestMethod "http://127.0.0.1:8000/proposals/generate/jobs/$($job.id)"
+```
+
+The job endpoints persist progress counters so Android can poll without a long
+blocking HTTP request. No proposal generation endpoint returns Strava tokens,
+the encryption key, or Android completion state.
 
 The default request body is empty. After importing older activities, Android
 uses an unprocessed-stream mode so proposal generation does not keep retrying

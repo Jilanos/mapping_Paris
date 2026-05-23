@@ -1,9 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
-from app.db.session import get_db
+from app.db.models import ProposalGenerationJob, utc_now
+from app.db.session import SessionLocal, get_db
 from app.schemas.proposals import (
+    ProposalGenerationJobResponse,
     ProposalGenerationRequest,
     ProposalGenerationSummary,
     ProposalMutationResponse,
@@ -15,6 +17,57 @@ from app.schemas.proposals import (
 from app.services.proposal_service import ProposalGenerationError, ProposalService
 
 router = APIRouter(prefix="/proposals", tags=["proposals"])
+
+
+def _run_proposal_generation_job(
+    job_id: int,
+    only_unprocessed: bool,
+    max_activities: int | None,
+) -> None:
+    with SessionLocal() as db:
+        job = db.query(ProposalGenerationJob).filter(ProposalGenerationJob.id == job_id).one_or_none()
+        if job is None:
+            return
+        now = utc_now()
+        job.status = "running"
+        job.started_at = now
+        job.updated_at = now
+        job.message = "Proposal generation running"
+        db.add(job)
+        db.commit()
+        try:
+            summary = ProposalService(db, get_settings()).generate(
+                only_unprocessed=only_unprocessed,
+                max_activities=max_activities,
+                job_id=job_id,
+            )
+            job = db.query(ProposalGenerationJob).filter(ProposalGenerationJob.id == job_id).one()
+            job.status = "success"
+            job.finished_at = utc_now()
+            job.message = "Proposal generation completed"
+            job.error_message = None
+            job.activities_with_streams_total = summary.activities_with_streams_total
+            job.activities_already_processed = summary.activities_already_processed
+            job.activities_pending_processing = summary.activities_pending_processing
+            job.activities_processed = summary.activities_processed
+            job.streams_processed = summary.streams_processed
+            job.candidate_segments_checked = summary.candidate_segments_checked
+            job.proposals_created = summary.proposals_created
+            job.proposals_updated = summary.proposals_updated
+            job.proposals_skipped = summary.proposals_skipped
+            job.errors_count = summary.errors_count
+            db.add(job)
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            job = db.query(ProposalGenerationJob).filter(ProposalGenerationJob.id == job_id).one_or_none()
+            if job is not None:
+                job.status = "failed"
+                job.finished_at = utc_now()
+                job.error_message = str(exc)
+                job.message = "Proposal generation failed"
+                db.add(job)
+                db.commit()
 
 
 @router.post("/generate", response_model=ProposalGenerationSummary)
@@ -29,6 +82,51 @@ def generate_proposals(
         )
     except ProposalGenerationError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/generate/jobs", response_model=ProposalGenerationJobResponse)
+def start_proposal_generation_job(
+    background_tasks: BackgroundTasks,
+    request: ProposalGenerationRequest | None = None,
+    db: Session = Depends(get_db),
+) -> ProposalGenerationJobResponse:
+    service = ProposalService(db, get_settings())
+    running = service.running_job()
+    if running is not None:
+        return service.job_response(running)
+
+    job = ProposalGenerationJob(
+        status="pending",
+        message="Proposal generation queued",
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    background_tasks.add_task(
+        _run_proposal_generation_job,
+        job.id,
+        request.only_unprocessed if request else True,
+        request.max_activities if request else None,
+    )
+    return service.job_response(job)
+
+
+@router.get("/generate/jobs/latest", response_model=ProposalGenerationJobResponse)
+def latest_proposal_generation_job(db: Session = Depends(get_db)) -> ProposalGenerationJobResponse:
+    service = ProposalService(db, get_settings())
+    return service.job_response(service.latest_job())
+
+
+@router.get("/generate/jobs/{job_id}", response_model=ProposalGenerationJobResponse)
+def get_proposal_generation_job(
+    job_id: int,
+    db: Session = Depends(get_db),
+) -> ProposalGenerationJobResponse:
+    service = ProposalService(db, get_settings())
+    job = service.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Proposal generation job not found")
+    return service.job_response(job)
 
 
 @router.get("", response_model=ProposalsResponse)

@@ -9,6 +9,7 @@ import com.jilanos.mappingparis.b2.B2ApiException
 import com.jilanos.mappingparis.b2.B2AuthStatus
 import com.jilanos.mappingparis.b2.B2Health
 import com.jilanos.mappingparis.b2.B2Proposal
+import com.jilanos.mappingparis.b2.B2ProposalGenerationJob
 import com.jilanos.mappingparis.b2.B2ProposalGenerationSummary
 import com.jilanos.mappingparis.b2.B2ProposalStatus
 import com.jilanos.mappingparis.b2.B2ProposalsPage
@@ -32,7 +33,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -103,6 +106,7 @@ data class B2IntegrationState(
     val proposalStatus: B2ProposalStatus? = null,
     val lastSyncRun: B2SyncRunSummary? = null,
     val lastProposalGeneration: B2ProposalGenerationSummary? = null,
+    val lastProposalGenerationJob: B2ProposalGenerationJob? = null,
     val proposalScanTotal: Int = 0,
     val proposalScanPages: Int = 0,
     val proposalScanHasMore: Boolean = false,
@@ -525,7 +529,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.3.5")
+            .put("appVersion", "0.3.6")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
@@ -634,12 +638,10 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                 b2State.update { it.copy(authStatus = authStatus, stageLabel = "Synchronisation des activites Strava...", stageProgress = 0.30f) }
                 val targetMaxPages = nextB2LoadMoreMaxPages()
                 val syncRun = client.triggerStravaSync(maxPages = targetMaxPages)
-                b2State.update { it.copy(lastSyncRun = syncRun, stageLabel = "Analyse des activites pour propositions...", stageProgress = 0.55f) }
-                val proposalGeneration = client.triggerProposalGeneration(
-                    onlyUnprocessed = true,
-                    maxActivities = B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES
-                )
-                b2State.update { it.copy(lastProposalGeneration = proposalGeneration, stageLabel = "Chargement et filtrage des propositions...", stageProgress = 0.75f) }
+                b2State.update { it.copy(lastSyncRun = syncRun, stageLabel = "Demarrage de l'analyse des activites...", stageProgress = null) }
+                val proposalGenerationJob = runB2ProposalGenerationJob(client)
+                val proposalGeneration = proposalGenerationJob.toSummary()
+                b2State.update { it.copy(lastProposalGeneration = proposalGeneration, stageLabel = "Chargement et filtrage des propositions...", stageProgress = null) }
                 applyB2ProposalScan(client, startOffset = 0, append = false)
                 val reviewableCount = reviewableB2ProposalsSnapshot().size
                 if (reviewableCount > MAX_PROPOSED_SEGMENTS_TO_RENDER_ON_MAP && b2MapHighlightsEnabled.value) {
@@ -686,10 +688,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             val targetMaxPages = nextB2LoadMoreMaxPages()
             try {
                 val syncRun = client.triggerStravaSync(maxPages = targetMaxPages)
-                val proposalGeneration = client.triggerProposalGeneration(
-                    onlyUnprocessed = true,
-                    maxActivities = B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES
-                )
+                b2State.update { it.copy(lastSyncRun = syncRun, stageLabel = "Demarrage de l'analyse des activites...", stageProgress = null) }
+                val proposalGenerationJob = runB2ProposalGenerationJob(client)
+                val proposalGeneration = proposalGenerationJob.toSummary()
                 applyB2ProposalScan(client, startOffset = 0, append = false)
                 val reviewableCount = filterReviewableB2Proposals(
                     proposals = b2Proposals.value,
@@ -713,6 +714,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                         lastSyncRun = syncRun,
                         syncStatus = syncStatus,
                         lastProposalGeneration = proposalGeneration,
+                        lastProposalGenerationJob = proposalGenerationJob,
                         proposalStatus = proposalStatus
                     )
                 }
@@ -935,6 +937,80 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         }
     }
 
+    private suspend fun runB2ProposalGenerationJob(client: B2ApiClient): B2ProposalGenerationJob {
+        val started = client.startProposalGenerationJob(
+            onlyUnprocessed = true,
+            maxActivities = B2_LOAD_MORE_PROPOSAL_MAX_ACTIVITIES
+        )
+        val jobId = started.id
+            ?: throw B2ApiException("Le backend n'a pas retourne d'identifiant de job d'analyse")
+        b2State.update {
+            it.copy(
+                lastProposalGenerationJob = started,
+                stageLabel = proposalJobStageLabel(started),
+                stageProgress = proposalJobProgress(started)
+            )
+        }
+        val completed = withTimeoutOrNull(B2_PROPOSAL_JOB_TIMEOUT_MS) {
+            var current = started
+            while (current.status == "pending" || current.status == "running") {
+                delay(B2_PROPOSAL_JOB_POLL_INTERVAL_MS)
+                current = client.getProposalGenerationJob(jobId)
+                b2State.update {
+                    it.copy(
+                        lastProposalGenerationJob = current,
+                        stageLabel = proposalJobStageLabel(current),
+                        stageProgress = proposalJobProgress(current)
+                    )
+                }
+            }
+            current
+        } ?: throw B2ApiException(
+            "L'analyse continue peut-etre cote backend. Reessayez de rafraichir le statut."
+        )
+        b2State.update {
+            it.copy(
+                lastProposalGenerationJob = completed,
+                stageLabel = proposalJobStageLabel(completed),
+                stageProgress = proposalJobProgress(completed)
+            )
+        }
+        if (completed.status == "failed") {
+            throw B2ApiException(completed.errorMessage ?: "L'analyse des propositions a echoue cote backend")
+        }
+        return completed
+    }
+
+    private fun proposalJobStageLabel(job: B2ProposalGenerationJob): String {
+        return when (job.status) {
+            "pending" -> "Analyse des activites en attente..."
+            "running" -> {
+                val total = job.activitiesWithStreamsTotal
+                if (total > 0) {
+                    "Activites analysees : ${job.activitiesProcessed} / $total"
+                } else {
+                    "Analyse des activites pour propositions..."
+                }
+            }
+            "success" -> "Analyse terminee : ${job.proposalsCreated} propositions creees"
+            "failed" -> "Analyse echouee"
+            else -> "Analyse des activites pour propositions..."
+        }
+    }
+
+    private fun proposalJobProgress(job: B2ProposalGenerationJob): Float? {
+        if (job.status == "pending" || job.status == "running") {
+            val total = job.activitiesWithStreamsTotal
+            return if (total > 0) {
+                (0.55f + (0.20f * (job.activitiesProcessed.toFloat() / total.toFloat())))
+                    .coerceIn(0.55f, 0.74f)
+            } else {
+                null
+            }
+        }
+        return if (job.status == "success") 0.75f else null
+    }
+
     private suspend fun scanB2ProposalPages(
         client: B2ApiClient,
         startOffset: Int,
@@ -1077,6 +1153,8 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         const val B2_PROPOSAL_SCAN_PAGE_SIZE = 500
         const val B2_PROPOSAL_SCAN_TARGET_REVIEWABLE = 100
         const val B2_PROPOSAL_SCAN_MAX_PROPOSALS = 2000
+        const val B2_PROPOSAL_JOB_POLL_INTERVAL_MS = 1_500L
+        const val B2_PROPOSAL_JOB_TIMEOUT_MS = 300_000L
         const val MAX_PROPOSED_SEGMENTS_TO_RENDER_ON_MAP = 300
         const val DEFAULT_GPS_COVERAGE_THRESHOLD_PERCENT = 70
         const val MIN_GPS_COVERAGE_THRESHOLD_PERCENT = 30
@@ -1091,6 +1169,22 @@ private data class B2ProposalScanResult(
     val hasMore: Boolean,
     val nextOffset: Int?
 )
+
+private fun B2ProposalGenerationJob.toSummary(): B2ProposalGenerationSummary {
+    return B2ProposalGenerationSummary(
+        activitiesWithStreamsTotal = activitiesWithStreamsTotal,
+        activitiesAlreadyHadProposals = 0,
+        activitiesWithoutExistingProposals = activitiesPendingProcessing,
+        activitiesProcessed = activitiesProcessed,
+        streamsProcessed = streamsProcessed,
+        activitiesSkippedAlreadyProcessed = activitiesAlreadyProcessed,
+        candidateSegmentsChecked = candidateSegmentsChecked,
+        proposalsCreated = proposalsCreated,
+        proposalsUpdated = proposalsUpdated,
+        proposalsSkipped = proposalsSkipped,
+        errorsCount = errorsCount
+    )
+}
 
 private fun segmentHasRequiredGpsCoverage(
     segment: StreetSegment,

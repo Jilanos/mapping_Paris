@@ -11,9 +11,11 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.core.config import get_settings  # noqa: E402
+from app.api.routes import proposals as proposal_routes  # noqa: E402
 from app.db.models import (  # noqa: E402
     B2StreetSegment,
     Base,
+    ProposalGenerationJob,
     SegmentDatasetVersion,
     SegmentMatchProposal,
     StravaActivity,
@@ -45,6 +47,7 @@ def proposal_client(tmp_path, monkeypatch):
         finally:
             db.close()
 
+    monkeypatch.setattr(proposal_routes, "SessionLocal", TestingSessionLocal)
     app.dependency_overrides[get_db] = override_get_db
     client = TestClient(app)
     try:
@@ -205,6 +208,59 @@ def test_proposal_generation_creates_proposal_from_stream(proposal_client) -> No
         proposal = db.query(SegmentMatchProposal).one()
         assert proposal.status == "proposed"
         assert proposal.coverage_ratio >= 0.35
+
+
+def test_proposal_generation_job_creates_and_reports_success(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_stream(session_factory)
+
+    response = client.post(
+        "/proposals/generate/jobs",
+        json={"only_unprocessed": True, "max_activities": 10},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["id"] is not None
+    latest = client.get("/proposals/generate/jobs/latest")
+    detail = client.get(f"/proposals/generate/jobs/{payload['id']}")
+    assert latest.status_code == 200
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "success"
+    assert detail.json()["activities_processed"] == 1
+    assert detail.json()["proposals_created"] == 1
+    assert "access_token" not in detail.text
+    assert "refresh_token" not in detail.text
+
+
+def test_proposal_generation_job_reuses_running_job(proposal_client) -> None:
+    client, session_factory = proposal_client
+    with session_factory() as db:
+        job = ProposalGenerationJob(status="running", message="Already running")
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        running_id = job.id
+
+    response = client.post("/proposals/generate/jobs")
+
+    assert response.status_code == 200
+    assert response.json()["id"] == running_id
+    assert response.json()["status"] == "running"
+
+
+def test_proposal_generation_job_records_failure(proposal_client) -> None:
+    client, _ = proposal_client
+
+    response = client.post("/proposals/generate/jobs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    detail = client.get(f"/proposals/generate/jobs/{payload['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "failed"
+    assert "No active segment dataset" in detail.json()["error_message"]
 
 
 def test_duplicate_generation_does_not_duplicate_proposals(proposal_client) -> None:

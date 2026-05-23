@@ -297,3 +297,35 @@ class StravaActivityProposalProcessing(Base):
         onupdate=utc_now,
         nullable=False,
     )
+
+
+class ProposalGenerationJob(Base):
+    __tablename__ = "proposal_generation_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending", index=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=utc_now,
+        onupdate=utc_now,
+        nullable=False,
+    )
+    message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    activities_with_streams_total: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    activities_already_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    activities_pending_processing: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    activities_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    streams_processed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    candidate_segments_checked: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposals_created: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposals_updated: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    proposals_skipped: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    errors_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

@@ -285,7 +285,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.NONE },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.3.5.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.6.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -1295,12 +1295,21 @@ private fun B2ReviewView(
                         Text("Importer mes activites Strava")
                     }
                     if (b2State.loading || b2State.stageLabel != null) {
-                        LinearProgressIndicator(
-                            progress = { b2State.stageProgress ?: 0f },
-                            modifier = Modifier.fillMaxWidth().height(6.dp),
-                            color = Color(0xFF0D8B70),
-                            trackColor = Color(0xFFD9E3EA)
-                        )
+                        val progress = b2State.stageProgress
+                        if (progress == null && b2State.loading) {
+                            LinearProgressIndicator(
+                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                color = Color(0xFF0D8B70),
+                                trackColor = Color(0xFFD9E3EA)
+                            )
+                        } else {
+                            LinearProgressIndicator(
+                                progress = { progress?.coerceIn(0f, 1f) ?: 0f },
+                                modifier = Modifier.fillMaxWidth().height(6.dp),
+                                color = Color(0xFF0D8B70),
+                                trackColor = Color(0xFFD9E3EA)
+                            )
+                        }
                         Text(
                             b2State.stageLabel ?: "Operation en cours...",
                             style = MaterialTheme.typography.bodySmall,

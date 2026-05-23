@@ -55,6 +55,32 @@ class B2ApiClient(private val baseUrl: String) {
         return B2JsonParser.proposalGenerationSummary(json)
     }
 
+    suspend fun startProposalGenerationJob(
+        onlyUnprocessed: Boolean? = null,
+        maxActivities: Int? = null
+    ): B2ProposalGenerationJob {
+        val body = if (onlyUnprocessed != null || maxActivities != null) {
+            JSONObject().apply {
+                onlyUnprocessed?.let { put("only_unprocessed", it) }
+                maxActivities?.let { put("max_activities", it) }
+            }
+        } else {
+            null
+        }
+        val json = requestJson(path = "/proposals/generate/jobs", method = "POST", body = body)
+        return B2JsonParser.proposalGenerationJob(json)
+    }
+
+    suspend fun getProposalGenerationJob(jobId: Int): B2ProposalGenerationJob {
+        val json = requestJson(path = "/proposals/generate/jobs/$jobId", method = "GET")
+        return B2JsonParser.proposalGenerationJob(json)
+    }
+
+    suspend fun getLatestProposalGenerationJob(): B2ProposalGenerationJob {
+        val json = requestJson(path = "/proposals/generate/jobs/latest", method = "GET")
+        return B2JsonParser.proposalGenerationJob(json)
+    }
+
     suspend fun getProposalStatus(): B2ProposalStatus {
         val json = requestJson(path = "/proposals/status", method = "GET")
         return B2JsonParser.proposalStatus(json)
@@ -185,6 +211,27 @@ object B2JsonParser {
             activitiesProcessed = json.optInt("activities_processed"),
             streamsProcessed = json.optInt("streams_processed"),
             activitiesSkippedAlreadyProcessed = json.optInt("activities_skipped_already_processed"),
+            candidateSegmentsChecked = json.optInt("candidate_segments_checked"),
+            proposalsCreated = json.optInt("proposals_created"),
+            proposalsUpdated = json.optInt("proposals_updated"),
+            proposalsSkipped = json.optInt("proposals_skipped"),
+            errorsCount = json.optInt("errors_count")
+        )
+    }
+
+    fun proposalGenerationJob(json: JSONObject): B2ProposalGenerationJob {
+        return B2ProposalGenerationJob(
+            id = json.optNullableInt("id"),
+            status = json.optString("status"),
+            startedAt = json.optNullableString("started_at"),
+            finishedAt = json.optNullableString("finished_at"),
+            message = json.optNullableString("message"),
+            errorMessage = json.optNullableString("error_message"),
+            activitiesWithStreamsTotal = json.optInt("activities_with_streams_total"),
+            activitiesAlreadyProcessed = json.optInt("activities_already_processed"),
+            activitiesPendingProcessing = json.optInt("activities_pending_processing"),
+            activitiesProcessed = json.optInt("activities_processed"),
+            streamsProcessed = json.optInt("streams_processed"),
             candidateSegmentsChecked = json.optInt("candidate_segments_checked"),
             proposalsCreated = json.optInt("proposals_created"),
             proposalsUpdated = json.optInt("proposals_updated"),

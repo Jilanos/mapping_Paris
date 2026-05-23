@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.db.models import (
     B2StreetSegment,
+    ProposalGenerationJob,
     SegmentDatasetVersion,
     SegmentMatchProposal,
     StravaActivity,
@@ -17,6 +18,7 @@ from app.db.models import (
     utc_now,
 )
 from app.schemas.proposals import (
+    ProposalGenerationJobResponse,
     ProposalGenerationSummary,
     ProposalProcessingResetResponse,
     ProposalResponse,
@@ -59,6 +61,7 @@ class ProposalService:
         self,
         only_unprocessed: bool = False,
         max_activities: int | None = None,
+        job_id: int | None = None,
     ) -> ProposalGenerationSummary:
         active_dataset = self._active_dataset()
         if active_dataset is None:
@@ -80,7 +83,7 @@ class ProposalService:
             skipped_already_processed = 0
         pending_processing = max(0, streams_total - len(processed_activity_ids))
         if not streams:
-            return ProposalGenerationSummary(
+            summary = ProposalGenerationSummary(
                 activities_with_streams_total=streams_total,
                 activities_already_had_proposals=len(activity_ids_with_proposals),
                 activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
@@ -95,6 +98,9 @@ class ProposalService:
                 proposals_skipped=0,
                 errors_count=0,
             )
+            if job_id is not None:
+                self._update_job_from_summary(job_id, summary, status="running", message="No activities pending")
+            return summary
 
         activities_processed: set[str] = set()
         candidate_segments_checked = 0
@@ -144,6 +150,28 @@ class ProposalService:
                     proposals_skipped=proposals_skipped - before_skipped,
                     error_message=processing_error,
                 )
+                if job_id is not None:
+                    partial = ProposalGenerationSummary(
+                        activities_with_streams_total=streams_total,
+                        activities_already_had_proposals=len(activity_ids_with_proposals),
+                        activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
+                        activities_already_processed=len(processed_activity_ids),
+                        activities_pending_processing=pending_processing,
+                        activities_processed=len(activities_processed),
+                        streams_processed=len(activities_processed),
+                        activities_skipped_already_processed=skipped_already_processed,
+                        candidate_segments_checked=candidate_segments_checked,
+                        proposals_created=proposals_created,
+                        proposals_updated=proposals_updated,
+                        proposals_skipped=proposals_skipped,
+                        errors_count=errors_count,
+                    )
+                    self._update_job_from_summary(
+                        job_id,
+                        partial,
+                        status="running",
+                        message=f"Processed {len(activities_processed)} activities",
+                    )
 
         for candidate in best_candidates.values():
             result = self._upsert_proposal(
@@ -165,7 +193,7 @@ class ProposalService:
             self._db.rollback()
             raise ProposalGenerationError("Proposal generation created duplicate logical segment candidates") from exc
 
-        return ProposalGenerationSummary(
+        summary = ProposalGenerationSummary(
             activities_with_streams_total=streams_total,
             activities_already_had_proposals=len(activity_ids_with_proposals),
             activities_without_existing_proposals=max(0, streams_total - len(activity_ids_with_proposals)),
@@ -180,6 +208,34 @@ class ProposalService:
             proposals_skipped=proposals_skipped,
             errors_count=errors_count,
         )
+        if job_id is not None:
+            self._update_job_from_summary(job_id, summary, status="running", message="Proposal counters updated")
+        return summary
+
+    def _update_job_from_summary(
+        self,
+        job_id: int,
+        summary: ProposalGenerationSummary,
+        status: str,
+        message: str | None = None,
+    ) -> None:
+        job = self._db.query(ProposalGenerationJob).filter(ProposalGenerationJob.id == job_id).one_or_none()
+        if job is None:
+            return
+        job.status = status
+        job.message = message
+        job.activities_with_streams_total = summary.activities_with_streams_total
+        job.activities_already_processed = summary.activities_already_processed
+        job.activities_pending_processing = summary.activities_pending_processing
+        job.activities_processed = summary.activities_processed
+        job.streams_processed = summary.streams_processed
+        job.candidate_segments_checked = summary.candidate_segments_checked
+        job.proposals_created = summary.proposals_created
+        job.proposals_updated = summary.proposals_updated
+        job.proposals_skipped = summary.proposals_skipped
+        job.errors_count = summary.errors_count
+        self._db.add(job)
+        self._db.commit()
 
     def _eligible_stream_query(self):
         return (
@@ -363,6 +419,50 @@ class ProposalService:
             dataset_version_id=active_dataset.id,
             processing_records_reset=reset_count,
             proposals_deleted=proposals_deleted,
+        )
+
+    def latest_job(self) -> ProposalGenerationJob | None:
+        return (
+            self._db.query(ProposalGenerationJob)
+            .order_by(ProposalGenerationJob.created_at.desc(), ProposalGenerationJob.id.desc())
+            .first()
+        )
+
+    def running_job(self) -> ProposalGenerationJob | None:
+        return (
+            self._db.query(ProposalGenerationJob)
+            .filter(ProposalGenerationJob.status.in_(["pending", "running"]))
+            .order_by(ProposalGenerationJob.created_at.desc(), ProposalGenerationJob.id.desc())
+            .first()
+        )
+
+    def get_job(self, job_id: int) -> ProposalGenerationJob | None:
+        return (
+            self._db.query(ProposalGenerationJob)
+            .filter(ProposalGenerationJob.id == job_id)
+            .one_or_none()
+        )
+
+    def job_response(self, job: ProposalGenerationJob | None) -> ProposalGenerationJobResponse:
+        if job is None:
+            return ProposalGenerationJobResponse(status="none")
+        return ProposalGenerationJobResponse(
+            id=job.id,
+            status=job.status,
+            started_at=job.started_at,
+            finished_at=job.finished_at,
+            message=job.message,
+            error_message=job.error_message,
+            activities_with_streams_total=job.activities_with_streams_total,
+            activities_already_processed=job.activities_already_processed,
+            activities_pending_processing=job.activities_pending_processing,
+            activities_processed=job.activities_processed,
+            streams_processed=job.streams_processed,
+            candidate_segments_checked=job.candidate_segments_checked,
+            proposals_created=job.proposals_created,
+            proposals_updated=job.proposals_updated,
+            proposals_skipped=job.proposals_skipped,
+            errors_count=job.errors_count,
         )
 
     def _active_dataset(self) -> SegmentDatasetVersion | None:

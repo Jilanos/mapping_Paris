@@ -76,3 +76,22 @@ class ProposalProcessingResetResponse(BaseModel):
     dataset_version_id: int | None
     processing_records_reset: int
     proposals_deleted: int = 0
+
+
+class ProposalGenerationJobResponse(BaseModel):
+    id: int | None = None
+    status: str
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    message: str | None = None
+    error_message: str | None = None
+    activities_with_streams_total: int = 0
+    activities_already_processed: int = 0
+    activities_pending_processing: int = 0
+    activities_processed: int = 0
+    streams_processed: int = 0
+    candidate_segments_checked: int = 0
+    proposals_created: int = 0
+    proposals_updated: int = 0
+    proposals_skipped: int = 0
+    errors_count: int = 0

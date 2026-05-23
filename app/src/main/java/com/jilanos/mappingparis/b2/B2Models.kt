@@ -50,6 +50,25 @@ data class B2ProposalGenerationSummary(
     val errorsCount: Int
 )
 
+data class B2ProposalGenerationJob(
+    val id: Int?,
+    val status: String,
+    val startedAt: String?,
+    val finishedAt: String?,
+    val message: String?,
+    val errorMessage: String?,
+    val activitiesWithStreamsTotal: Int,
+    val activitiesAlreadyProcessed: Int,
+    val activitiesPendingProcessing: Int,
+    val activitiesProcessed: Int,
+    val streamsProcessed: Int,
+    val candidateSegmentsChecked: Int,
+    val proposalsCreated: Int,
+    val proposalsUpdated: Int,
+    val proposalsSkipped: Int,
+    val errorsCount: Int
+)
+
 data class B2ProposalStatus(
     val totalProposals: Int,
     val proposedCount: Int,
