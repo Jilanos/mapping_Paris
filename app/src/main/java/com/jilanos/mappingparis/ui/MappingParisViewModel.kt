@@ -529,7 +529,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
         val completedIds = uiState.value.completedLogicalIds.sorted()
         return JSONObject()
             .put("schema", "mapping-paris-completion-v1")
-            .put("appVersion", "0.3.6")
+            .put("appVersion", "0.3.7")
             .put("exportedAt", Instant.now().toString())
             .put("completedLogicalSegmentIds", JSONArray(completedIds))
             .put("completedCount", completedIds.size)
@@ -773,15 +773,43 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
 
     fun validateB2Proposal(proposalId: Int) {
         viewModelScope.launch {
-            runB2Operation("Proposition validee et segment marque parcouru") { client ->
-                val proposal = reviewableB2ProposalsSnapshot().firstOrNull { it.id == proposalId }
-                    ?: throw B2ApiException("Proposition introuvable localement")
-                val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
-                    ?: throw B2ApiException("Proposition non associee a un segment local: validation bloquee")
+            val client = b2ClientOrNull()
+            if (client == null) {
+                b2State.update { it.copy(loading = false, error = "Configure d'abord l'URL backend B2", message = null) }
+                return@launch
+            }
+            if (b2State.value.loading) return@launch
+            val proposal = reviewableB2ProposalsSnapshot().firstOrNull { it.id == proposalId }
+            if (proposal == null) {
+                b2State.update { it.copy(error = "Proposition introuvable localement", message = null) }
+                return@launch
+            }
+            val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
+            if (logicalId == null) {
+                b2State.update { it.copy(error = "Proposition non associee a un segment local: validation bloquee", message = null) }
+                return@launch
+            }
+            b2State.update { it.copy(loading = true, error = null, message = null) }
+            repository.setCompleted(logicalId, completed = true)
+            try {
                 client.acceptProposal(proposalId)
-                repository.setCompleted(logicalId, completed = true)
                 applyB2ProposalScan(client, startOffset = 0, append = false)
-                b2State.update { it.copy(proposalStatus = client.getProposalStatus()) }
+                b2State.update {
+                    it.copy(
+                        loading = false,
+                        error = null,
+                        message = "Segment marque comme parcouru localement et confirme cote backend",
+                        proposalStatus = client.getProposalStatus()
+                    )
+                }
+            } catch (exception: Exception) {
+                b2State.update {
+                    it.copy(
+                        loading = false,
+                        error = "Le segment a ete marque comme parcouru localement, mais la confirmation backend a echoue. Vous pourrez reconcilier plus tard.",
+                        message = exception.message
+                    )
+                }
             }
         }
     }
@@ -806,9 +834,9 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             if (b2State.value.loading) return@launch
             b2State.update { it.copy(loading = true, error = null, message = null) }
             val loaded = reviewableB2ProposalsSnapshot()
-            var accepted = 0
+            var backendAccepted = 0
+            var backendFailed = 0
             var markedCompleted = 0
-            var failed = 0
             var unmatched = 0
             val completedIds = mutableSetOf<String>()
             loaded.forEach { proposal ->
@@ -817,17 +845,20 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                     unmatched += 1
                     return@forEach
                 }
-                try {
-                    client.acceptProposal(proposal.id)
-                    accepted += 1
-                    completedIds += logicalId
-                } catch (_: Exception) {
-                    failed += 1
-                }
+                completedIds += logicalId
             }
             if (completedIds.isNotEmpty()) {
                 repository.setCompleted(completedIds, completed = true)
                 markedCompleted = completedIds.size
+            }
+            loaded.forEach { proposal ->
+                if (resolveB2ProposalLogicalId(proposal, segments.value) == null) return@forEach
+                try {
+                    client.acceptProposal(proposal.id)
+                    backendAccepted += 1
+                } catch (_: Exception) {
+                    backendFailed += 1
+                }
             }
             try {
                 applyB2ProposalScan(client, startOffset = 0, append = false)
@@ -836,7 +867,7 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                         proposalStatus = client.getProposalStatus(),
                         loading = false,
                         error = null,
-                        message = "Tout valider: $accepted acceptees, $markedCompleted segments locaux marques, $failed echecs, $unmatched non mappees"
+                        message = "Tout valider: $markedCompleted segments locaux marques, $backendAccepted confirmations backend, $backendFailed echecs backend, $unmatched non mappees"
                     )
                 }
             } catch (exception: Exception) {
@@ -844,7 +875,68 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
                     it.copy(
                         loading = false,
                         error = "Validation terminee mais rafraichissement impossible: ${exception.message}",
-                        message = "Tout valider: $accepted acceptees, $markedCompleted segments locaux marques, $failed echecs, $unmatched non mappees"
+                        message = "Tout valider: $markedCompleted segments locaux marques, $backendAccepted confirmations backend, $backendFailed echecs backend, $unmatched non mappees"
+                    )
+                }
+            }
+        }
+    }
+
+    fun reconcileB2AcceptedProposals() {
+        viewModelScope.launch {
+            runB2Operation("Reconciliation des validations terminee") { client ->
+                val accepted = fetchB2ProposalsByStatus(client, status = "accepted")
+                val completed = completionStatesSnapshot()
+                var checked = 0
+                var unmatched = 0
+                val toComplete = mutableSetOf<String>()
+                accepted.forEach { proposal ->
+                    checked += 1
+                    val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
+                    if (logicalId == null) {
+                        unmatched += 1
+                    } else if (completed[logicalId] != true) {
+                        toComplete += logicalId
+                    }
+                }
+                if (toComplete.isNotEmpty()) {
+                    repository.setCompleted(toComplete, completed = true)
+                }
+                b2State.update {
+                    it.copy(
+                        message = "Reconciliation: $checked propositions acceptees verifiees, ${toComplete.size} completions locales ajoutees, $unmatched non reconnues"
+                    )
+                }
+            }
+        }
+    }
+
+    fun acknowledgeLocalB2Validations() {
+        viewModelScope.launch {
+            runB2Operation("Validations locales synchronisees avec le backend") { client ->
+                val proposed = fetchB2ProposalsByStatus(client, status = "proposed")
+                val completed = completionStatesSnapshot()
+                var backendAccepted = 0
+                var backendFailed = 0
+                var skipped = 0
+                proposed.forEach { proposal ->
+                    val logicalId = resolveB2ProposalLogicalId(proposal, segments.value)
+                    if (logicalId == null || completed[logicalId] != true) {
+                        skipped += 1
+                        return@forEach
+                    }
+                    try {
+                        client.acceptProposal(proposal.id)
+                        backendAccepted += 1
+                    } catch (_: Exception) {
+                        backendFailed += 1
+                    }
+                }
+                applyB2ProposalScan(client, startOffset = 0, append = false)
+                b2State.update {
+                    it.copy(
+                        proposalStatus = client.getProposalStatus(),
+                        message = "Synchronisation locale: $backendAccepted confirmees backend, $backendFailed echecs, $skipped ignorees"
                     )
                 }
             }
@@ -1046,6 +1138,24 @@ class MappingParisViewModel(application: Application) : AndroidViewModel(applica
             hasMore = latestPage?.hasMore == true,
             nextOffset = if (latestPage?.hasMore == true) latestPage.nextOffset else null
         )
+    }
+
+    private suspend fun fetchB2ProposalsByStatus(
+        client: B2ApiClient,
+        status: String,
+        maxProposals: Int = B2_PROPOSAL_SCAN_MAX_PROPOSALS
+    ): List<B2Proposal> {
+        val collected = mutableListOf<B2Proposal>()
+        var offset = 0
+        var hasMore = true
+        while (hasMore && collected.size < maxProposals) {
+            val limit = minOf(B2_PROPOSAL_SCAN_PAGE_SIZE, maxProposals - collected.size)
+            val page = client.getProposalsPage(status = status, limit = limit, offset = offset)
+            collected += page.proposals
+            hasMore = page.hasMore && page.nextOffset != null && page.returned > 0
+            offset = page.nextOffset ?: break
+        }
+        return collected
     }
 
     private fun nextB2LoadMoreMaxPages(): Int {

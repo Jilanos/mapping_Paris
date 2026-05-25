@@ -6,6 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.core.config import get_settings
 from app.db.models import Base
+from app.db.schema import ensure_schema_version
 
 
 def create_engine_for_url(database_url: str) -> Engine:
@@ -24,6 +25,7 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    ensure_schema_version(engine)
 
 
 def get_db() -> Generator[Session, None, None]:

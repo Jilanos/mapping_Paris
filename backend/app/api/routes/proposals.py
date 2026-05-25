@@ -117,6 +117,12 @@ def latest_proposal_generation_job(db: Session = Depends(get_db)) -> ProposalGen
     return service.job_response(service.latest_job())
 
 
+@router.post("/generate/jobs/reset-stale")
+def reset_stale_proposal_generation_jobs(db: Session = Depends(get_db)) -> dict[str, int]:
+    reset_count = ProposalService(db, get_settings()).reset_stale_jobs()
+    return {"jobs_reset": reset_count}
+
+
 @router.get("/generate/jobs/{job_id}", response_model=ProposalGenerationJobResponse)
 def get_proposal_generation_job(
     job_id: int,

@@ -285,7 +285,7 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onClose = { activePanel = OverlayPanel.NONE },
                         onExport = {
                             pendingExportJson = viewModel.buildExportJson()
-                            exportLauncher.launch("mapping-paris-completion-0.3.6.json")
+                            exportLauncher.launch("mapping-paris-completion-0.3.7.json")
                         },
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/*", "*/*")) },
                         onReset = { showResetConfirmation = true },
@@ -342,6 +342,8 @@ fun MappingParisApp(viewModel: MappingParisViewModel) {
                         onDismissAll = viewModel::dismissAllLoadedB2Proposals,
                         onMapHighlightsChange = viewModel::setB2MapHighlightsEnabled,
                         onResetProcessedActivities = viewModel::resetB2ProcessedActivities,
+                        onReconcileAccepted = viewModel::reconcileB2AcceptedProposals,
+                        onAcknowledgeLocal = viewModel::acknowledgeLocalB2Validations,
                         onClose = { activePanel = OverlayPanel.NONE },
                         modifier = Modifier
                             .align(Alignment.Center)
@@ -1234,6 +1236,8 @@ private fun B2ReviewView(
     onDismissAll: () -> Unit,
     onMapHighlightsChange: (Boolean) -> Unit,
     onResetProcessedActivities: () -> Unit,
+    onReconcileAccepted: () -> Unit,
+    onAcknowledgeLocal: () -> Unit,
     onClose: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -1360,6 +1364,12 @@ private fun B2ReviewView(
                         }
                         OutlinedButton(onClick = { showResetProcessingConfirmation = true }, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
                             Text("Reinitialiser les activites traitees")
+                        }
+                        OutlinedButton(onClick = onReconcileAccepted, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                            Text("Reconcilier les validations")
+                        }
+                        OutlinedButton(onClick = onAcknowledgeLocal, modifier = Modifier.fillMaxWidth(), enabled = !b2State.loading) {
+                            Text("Synchroniser les validations locales")
                         }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

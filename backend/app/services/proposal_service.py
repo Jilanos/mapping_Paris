@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import UTC
 import json
 import math
 
@@ -103,23 +104,25 @@ class ProposalService:
             return summary
 
         activities_processed: set[str] = set()
+        streams_processed = 0
         candidate_segments_checked = 0
         proposals_created = 0
         proposals_updated = 0
         proposals_skipped = 0
         errors_count = 0
-        best_candidates: dict[tuple[int, str, str], ProposalCandidate] = {}
 
         for stream in streams:
-            activities_processed.add(stream.strava_activity_id)
-            before_created = proposals_created
-            before_updated = proposals_updated
-            before_skipped = proposals_skipped
-            processing_error: str | None = None
+            activity_created = 0
+            activity_updated = 0
+            activity_skipped = 0
+            activity_candidate_segments_checked = 0
             try:
+                self._mark_activity_running(active_dataset.id, stream.strava_activity_id)
+                self._db.commit()
                 stream_points = json.loads(stream.latlng_json)
                 candidates = self._candidate_segments(active_dataset.id, stream_points)
-                candidate_segments_checked += len(candidates)
+                activity_candidate_segments_checked = len(candidates)
+                best_candidates: dict[tuple[int, str, str], ProposalCandidate] = {}
                 for segment in candidates:
                     match = self._matcher.match(stream_points, segment)
                     if match is None:
@@ -138,18 +141,59 @@ class ProposalService:
                     current = best_candidates.get(key)
                     if current is None or self._candidate_is_better(candidate, current):
                         best_candidates[key] = candidate
-            except Exception:
-                errors_count += 1
-                processing_error = "Activity stream could not be matched"
-            finally:
+
+                for candidate in best_candidates.values():
+                    result = self._upsert_proposal(
+                        candidate.dataset_version_id,
+                        candidate.stream,
+                        candidate.segment,
+                        candidate.match,
+                    )
+                    if result == "created":
+                        activity_created += 1
+                    elif result == "updated":
+                        activity_updated += 1
+                    else:
+                        activity_skipped += 1
+                self._db.commit()
                 self._mark_activity_processed(
                     dataset_version_id=active_dataset.id,
                     activity_id=stream.strava_activity_id,
-                    proposals_created=proposals_created - before_created,
-                    proposals_updated=proposals_updated - before_updated,
-                    proposals_skipped=proposals_skipped - before_skipped,
-                    error_message=processing_error,
+                    proposals_created=activity_created,
+                    proposals_updated=activity_updated,
+                    proposals_skipped=activity_skipped,
+                    error_message=None,
                 )
+                self._db.commit()
+                activities_processed.add(stream.strava_activity_id)
+                streams_processed += 1
+                candidate_segments_checked += activity_candidate_segments_checked
+                proposals_created += activity_created
+                proposals_updated += activity_updated
+                proposals_skipped += activity_skipped
+            except IntegrityError as exc:
+                self._db.rollback()
+                errors_count += 1
+                self._mark_activity_failed(
+                    active_dataset.id,
+                    stream.strava_activity_id,
+                    "Proposal generation created duplicate logical segment candidates",
+                )
+                self._db.commit()
+                if not job_id:
+                    raise ProposalGenerationError(
+                        "Proposal generation created duplicate logical segment candidates"
+                    ) from exc
+            except Exception:
+                self._db.rollback()
+                errors_count += 1
+                self._mark_activity_failed(
+                    active_dataset.id,
+                    stream.strava_activity_id,
+                    "Activity stream could not be matched",
+                )
+                self._db.commit()
+            finally:
                 if job_id is not None:
                     partial = ProposalGenerationSummary(
                         activities_with_streams_total=streams_total,
@@ -158,7 +202,7 @@ class ProposalService:
                         activities_already_processed=len(processed_activity_ids),
                         activities_pending_processing=pending_processing,
                         activities_processed=len(activities_processed),
-                        streams_processed=len(activities_processed),
+                        streams_processed=streams_processed,
                         activities_skipped_already_processed=skipped_already_processed,
                         candidate_segments_checked=candidate_segments_checked,
                         proposals_created=proposals_created,
@@ -173,26 +217,6 @@ class ProposalService:
                         message=f"Processed {len(activities_processed)} activities",
                     )
 
-        for candidate in best_candidates.values():
-            result = self._upsert_proposal(
-                candidate.dataset_version_id,
-                candidate.stream,
-                candidate.segment,
-                candidate.match,
-            )
-            if result == "created":
-                proposals_created += 1
-            elif result == "updated":
-                proposals_updated += 1
-            else:
-                proposals_skipped += 1
-
-        try:
-            self._db.commit()
-        except IntegrityError as exc:
-            self._db.rollback()
-            raise ProposalGenerationError("Proposal generation created duplicate logical segment candidates") from exc
-
         summary = ProposalGenerationSummary(
             activities_with_streams_total=streams_total,
             activities_already_had_proposals=len(activity_ids_with_proposals),
@@ -200,7 +224,7 @@ class ProposalService:
             activities_already_processed=len(processed_activity_ids),
             activities_pending_processing=pending_processing,
             activities_processed=len(activities_processed),
-            streams_processed=len(streams),
+            streams_processed=streams_processed,
             activities_skipped_already_processed=skipped_already_processed,
             candidate_segments_checked=candidate_segments_checked,
             proposals_created=proposals_created,
@@ -322,6 +346,41 @@ class ProposalService:
         processing.error_message = error_message
         self._db.add(processing)
 
+    def _mark_activity_running(self, dataset_version_id: int, activity_id: str) -> None:
+        processing = self._activity_processing(dataset_version_id, activity_id)
+        if processing is None:
+            processing = StravaActivityProposalProcessing(
+                dataset_version_id=dataset_version_id,
+                strava_activity_id=activity_id,
+            )
+        processing.status = "running"
+        processing.error_message = None
+        self._db.add(processing)
+
+    def _mark_activity_failed(self, dataset_version_id: int, activity_id: str, error_message: str) -> None:
+        processing = self._activity_processing(dataset_version_id, activity_id)
+        if processing is None:
+            processing = StravaActivityProposalProcessing(
+                dataset_version_id=dataset_version_id,
+                strava_activity_id=activity_id,
+            )
+        processing.status = "failed"
+        processing.processed_at = utc_now()
+        processing.error_message = error_message
+        self._db.add(processing)
+
+    def _activity_processing(
+        self,
+        dataset_version_id: int,
+        activity_id: str,
+    ) -> StravaActivityProposalProcessing | None:
+        return (
+            self._db.query(StravaActivityProposalProcessing)
+            .filter(StravaActivityProposalProcessing.dataset_version_id == dataset_version_id)
+            .filter(StravaActivityProposalProcessing.strava_activity_id == activity_id)
+            .one_or_none()
+        )
+
     def list_proposals(
         self,
         status: str | None = "proposed",
@@ -429,12 +488,33 @@ class ProposalService:
         )
 
     def running_job(self) -> ProposalGenerationJob | None:
-        return (
+        jobs = (
             self._db.query(ProposalGenerationJob)
             .filter(ProposalGenerationJob.status.in_(["pending", "running"]))
             .order_by(ProposalGenerationJob.created_at.desc(), ProposalGenerationJob.id.desc())
-            .first()
+            .all()
         )
+        for job in jobs:
+            if self._job_is_stale(job):
+                self._mark_job_stale(job)
+        if any(job.status == "failed" for job in jobs):
+            self._db.commit()
+        return next((job for job in jobs if job.status in {"pending", "running"}), None)
+
+    def reset_stale_jobs(self) -> int:
+        jobs = (
+            self._db.query(ProposalGenerationJob)
+            .filter(ProposalGenerationJob.status.in_(["pending", "running"]))
+            .all()
+        )
+        reset_count = 0
+        for job in jobs:
+            if self._job_is_stale(job):
+                self._mark_job_stale(job)
+                reset_count += 1
+        if reset_count:
+            self._db.commit()
+        return reset_count
 
     def get_job(self, job_id: int) -> ProposalGenerationJob | None:
         return (
@@ -464,6 +544,19 @@ class ProposalService:
             proposals_skipped=job.proposals_skipped,
             errors_count=job.errors_count,
         )
+
+    def _job_is_stale(self, job: ProposalGenerationJob) -> bool:
+        reference = job.updated_at or job.started_at or job.created_at
+        if reference.tzinfo is None:
+            reference = reference.replace(tzinfo=UTC)
+        return (utc_now() - reference).total_seconds() > self._settings.proposal_job_stale_after_seconds
+
+    def _mark_job_stale(self, job: ProposalGenerationJob) -> None:
+        job.status = "failed"
+        job.finished_at = utc_now()
+        job.message = "Proposal generation job became stale"
+        job.error_message = "Job marked failed because it became stale"
+        self._db.add(job)
 
     def _active_dataset(self) -> SegmentDatasetVersion | None:
         return (

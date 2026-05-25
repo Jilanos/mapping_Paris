@@ -87,8 +87,23 @@ sqlite:///./mapping_paris_strava_b2.db
 
 Set `DATABASE_URL` in `.env` to use another local SQLite path.
 
-Alembic migrations and PostgreSQL support are intentionally not part of this
-milestone.
+The backend also stores an explicit local schema version in `app_metadata`.
+Missing tables are created automatically, but unsupported older schema versions
+stop startup with reset guidance instead of silently continuing with a partially
+compatible database. Alembic migrations and PostgreSQL support are intentionally
+not part of this milestone.
+
+If local schema state becomes incompatible during development, reset only the
+backend SQLite files:
+
+```powershell
+.\scripts\reset-local-db.ps1 -Force
+.\scripts\init-local-db.ps1
+```
+
+This deletes local Strava tokens, synced activities, streams, proposals, and job
+history. It does not touch `.env`, source code, Android app data, or the segment
+dataset. Reconnect Strava after resetting the backend DB.
 
 ## Token encryption
 
@@ -212,6 +227,7 @@ Implemented routes:
 - `POST /proposals/generate/jobs`
 - `GET /proposals/generate/jobs/{job_id}`
 - `GET /proposals/generate/jobs/latest`
+- `POST /proposals/generate/jobs/reset-stale`
 - `GET /proposals`
 - `GET /proposals/status`
 - `POST /proposals/{proposal_id}/dismiss`
@@ -232,8 +248,10 @@ Invoke-RestMethod "http://127.0.0.1:8000/proposals/generate/jobs/$($job.id)"
 ```
 
 The job endpoints persist progress counters so Android can poll without a long
-blocking HTTP request. No proposal generation endpoint returns Strava tokens,
-the encryption key, or Android completion state.
+blocking HTTP request. Running or pending jobs older than
+`PROPOSAL_JOB_STALE_AFTER_SECONDS` are marked failed so they do not block future
+imports after a backend restart. No proposal generation endpoint returns Strava
+tokens, the encryption key, or Android completion state.
 
 The default request body is empty. After importing older activities, Android
 uses an unprocessed-stream mode so proposal generation does not keep retrying

@@ -32,6 +32,7 @@ class Settings(BaseSettings):
     match_min_matched_points: int = 2
     match_max_activities_per_run: int = 20
     match_candidate_bbox_buffer_meters: float = 50.0
+    proposal_job_stale_after_seconds: int = 1800
 
     model_config = SettingsConfigDict(
         env_prefix="",

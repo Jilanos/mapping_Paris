@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import json
 import sys
 from pathlib import Path
@@ -19,6 +19,7 @@ from app.db.models import (  # noqa: E402
     SegmentDatasetVersion,
     SegmentMatchProposal,
     StravaActivity,
+    StravaActivityProposalProcessing,
     StravaStream,
 )
 from app.db.session import get_db  # noqa: E402
@@ -250,6 +251,53 @@ def test_proposal_generation_job_reuses_running_job(proposal_client) -> None:
     assert response.json()["status"] == "running"
 
 
+def test_stale_running_job_is_failed_and_new_job_starts(proposal_client) -> None:
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_stream(session_factory)
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    with session_factory() as db:
+        job = ProposalGenerationJob(
+            status="running",
+            message="stale",
+            created_at=stale_time,
+            updated_at=stale_time,
+            started_at=stale_time,
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        stale_id = job.id
+
+    response = client.post("/proposals/generate/jobs", json={"only_unprocessed": True, "max_activities": 10})
+
+    assert response.status_code == 200
+    assert response.json()["id"] != stale_id
+    with session_factory() as db:
+        stale_job = db.get(ProposalGenerationJob, stale_id)
+        assert stale_job.status == "failed"
+        assert "stale" in stale_job.error_message
+
+
+def test_stale_pending_job_reset_endpoint(proposal_client) -> None:
+    client, session_factory = proposal_client
+    stale_time = datetime.now(UTC) - timedelta(hours=2)
+    with session_factory() as db:
+        db.add(
+            ProposalGenerationJob(
+                status="pending",
+                created_at=stale_time,
+                updated_at=stale_time,
+            )
+        )
+        db.commit()
+
+    response = client.post("/proposals/generate/jobs/reset-stale")
+
+    assert response.status_code == 200
+    assert response.json()["jobs_reset"] == 1
+
+
 def test_proposal_generation_job_records_failure(proposal_client) -> None:
     client, _ = proposal_client
 
@@ -261,6 +309,39 @@ def test_proposal_generation_job_records_failure(proposal_client) -> None:
     assert detail.status_code == 200
     assert detail.json()["status"] == "failed"
     assert "No active segment dataset" in detail.json()["error_message"]
+
+
+def test_failed_activity_remains_retryable_after_upsert_failure(proposal_client, monkeypatch) -> None:
+    from app.services.proposal_service import ProposalService
+
+    client, session_factory = proposal_client
+    _seed_dataset(session_factory)
+    _seed_stream(session_factory)
+    original_upsert = ProposalService._upsert_proposal
+
+    def failing_upsert(self, *args, **kwargs):
+        raise RuntimeError("simulated upsert failure")
+
+    monkeypatch.setattr(ProposalService, "_upsert_proposal", failing_upsert)
+    first = client.post("/proposals/generate", json={"only_unprocessed": True, "max_activities": 10})
+
+    assert first.status_code == 200
+    assert first.json()["activities_processed"] == 0
+    assert first.json()["errors_count"] == 1
+    with session_factory() as db:
+        processing = db.query(StravaActivityProposalProcessing).one()
+        assert processing.status == "failed"
+        assert db.query(SegmentMatchProposal).count() == 0
+
+    monkeypatch.setattr(ProposalService, "_upsert_proposal", original_upsert)
+    second = client.post("/proposals/generate", json={"only_unprocessed": True, "max_activities": 10})
+
+    assert second.status_code == 200
+    assert second.json()["activities_processed"] == 1
+    assert second.json()["proposals_created"] == 1
+    with session_factory() as db:
+        assert db.query(StravaActivityProposalProcessing).one().status == "processed"
+        assert db.query(SegmentMatchProposal).count() == 1
 
 
 def test_duplicate_generation_does_not_duplicate_proposals(proposal_client) -> None:
